@@ -1,6 +1,8 @@
 #include "FHEops.h"
 #include <sys/resource.h>
 
+#define DEBUG
+
 /***********************************
  *File generator program
  *Creates a .SecKey, .CtxtBase and .Ctxt file
@@ -12,36 +14,106 @@ int main(int argc, char * argv[]) {
     string filename5 = "Prx.Dis";
     vector<Ctxt> them;
     fstream fs;
-    stringstream ss;
     ServerData primary;
     ServerLink sl;
+
+    sl.links.push_back(0);
+    sl.link = 0;
+    char buffer[256];
+
+    if (argc < 2) {
+        cout << "./FHEops_x portnum ... moron." << endl;
+        return 0;
+    }
+
     prepare_server_socket(&sl, argv);
+#ifdef DEBUG
+    cout << "Socket Prepped." << endl;
+#endif // DEBUG
     generate_scheme(&primary);
+#ifdef DEBUG
+    cout << "FHE Scheme generated." << endl;
+#endif // DEBUG
     generate_upkg(&primary);
+#ifdef DEBUG
+    cout << "FHE user package generated." << endl;
+#endif // DEBUG
     int i = 0;
 
 
     while(true) {
-        for (i = 0; i <= primary.users; i++) {
 
-            Ctxt input(*primary.publicKey);
+        if (primary.users > 0) {
 
-            fs.open(&filename4[0], fstream::in);
-            fs >> input;
-            fs.close();
+            for (i = 0; i < primary.users; i++) {
 
-            them = handle_user(them, &primary, input, filename5);
+                //Wait to hear from the client that they have sent their location.
+                bzero(buffer, sizeof(buffer));
+                while (buffer[0] != 'X') {
+                    bzero(buffer, sizeof(buffer));
+                    while ((sl.link = read(sl.links[i], buffer, sizeof(buffer))) < 1);
+                    sl.link = 0;
+                }
 
+                Ctxt input(*primary.publicKey);
+#ifdef DEBUG
+    cout << "User " << i << " being processed." << endl;
+#endif // DEBUG
+
+                fs.open(&filename4[0], fstream::in);
+                fs >> input;
+                fs.close();
+
+#ifdef DEBUG
+    cout << "New Co-ords recieved." << endl;
+#endif // DEBUG
+
+                them = handle_user(them, &primary, input, filename5);
+#ifdef DEBUG
+    cout << "New Output Generated." << endl;
+#endif // DEBUG
+                //Inform the client that the location has been processed.
+                bzero(buffer, sizeof(buffer));
+                buffer[0] = 'K';
+                while ((sl.link = write(sl.links[i], buffer, sizeof(buffer))) < 1);
+                sl.link = 0;
+            }
         }
+
         if ((sl.links[primary.users] = accept(sl.sockFD, (struct sockaddr *)&sl.clientAddr, &sl.len)) > 0) {
+#ifdef DEBUG
+    cout << "New User Accepted." << endl;
+#endif // DEBUG
+            //Wait to hear from the client that they have sent their location.
+            bzero(buffer, sizeof(buffer));
+            while (buffer[0] != 'X') {
+                bzero(buffer, sizeof(buffer));
+                while ((sl.link = read(sl.links[primary.users], buffer, sizeof(buffer))) < 1);
+                sl.link = 0;
+            }
 
             Ctxt input(*primary.publicKey);
 
             fs.open(&filename4[0], fstream::in);
             fs >> input;
             fs.close();
+#ifdef DEBUG
+    cout << "New Co-ords recieved." << endl;
+#endif // DEBUG
 
             them = handle_new_user(them, &primary, input, filename5);
+
+            //Inform the client that the location has been processed.
+            bzero(buffer, sizeof(buffer));
+            buffer[0] = 'K';
+            while ((sl.link = write(sl.links[primary.users], buffer, sizeof(buffer))) < 1);
+
+
+            sl.links.push_back(0);
+            sl.link = 0;
+#ifdef DEBUG
+    cout << "Output Generated." << endl;
+#endif // DEBUG
         }
 
     }
@@ -78,7 +150,7 @@ int generate_scheme(ServerData * sd) {
 
     sd->users = 0;
 
-    cout << "Init Complete. Terminating" << endl;
+    cout << "Init Complete." << endl;
 
     return 1;
 }
@@ -90,7 +162,7 @@ int generate_scheme(ServerData * sd) {
 int generate_upkg(ServerData * sd) {
 
     fstream keyFile;
-    string filename1 = "Prox.CtxtBase";
+    string filename1 = "Prox.Base";
     string filename2 = "Prox.Ctxt";
     string filename3 = "Prox.PubKey";
 
@@ -101,12 +173,12 @@ int generate_upkg(ServerData * sd) {
     cout << "ContextBase written to " << filename1 << endl;
 
     keyFile.open(&filename2[0], fstream::out | fstream::trunc);
-    keyFile << sd->context << endl;
+    keyFile << *sd->context << endl;
     keyFile.close();
     cout << "Context written to " << filename2 << endl;
 
     keyFile.open(&filename3[0], fstream::out | fstream::trunc);
-    keyFile << sd->publicKey << endl;
+    keyFile << *sd->publicKey << endl;
     keyFile.close();
     cout << "PubKey written to " << filename3 << endl;
 

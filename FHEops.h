@@ -47,6 +47,7 @@ struct ServerLink {
     socklen_t len;
     struct sockaddr_in clientAddr;
     struct sockaddr_in servAddr;
+    int link;
 };
 
 int generate_scheme(ServerData * sd);

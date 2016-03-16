@@ -1,6 +1,7 @@
 #include "prox.h"
 #include <sys/resource.h>
 
+#define DEBUG
 /***********************************
  *File generator program
  *Creates a .SecKey, .CtxtBase and .Ctxt file
@@ -11,23 +12,57 @@ int main(int argc, char * argv[]) {
     ServerLink op;
     UserPackage me;
 
-    string f1 = "Prox.CtxtBase";
+    string f1 = "Prox.Base";
     string f2 = "Prox.Ctxt";
     string f3 = "Prox.PubKey";
     string f4 = "Prx.Loc";
     string f5 = "Prx.Dis";
     vector<long> them;
+    char buffer[256];
+    op.link = 0;
+
+    if (argc < 3) {
+        cerr << "./prox_x portnum localhost(hostname)" << endl;
+        return 0;
+    }
 
     if (!(prepare_socket(&op, argv))) {
         cerr << "fuck";
         return 0;
     }
-
+#ifdef DEBUG
+    cout << "Connection Established." << endl;
+#endif // DEBUG
     install_upkg(&me, f1, f2, f3);
+#ifdef DEBUG
+    cout << "FHE Scheme installed." << endl;
+#endif // DEBUG
 
     while(send_location(&me, f4) == 1) {
+#ifdef DEBUG
+    cout << "Location Sent." << endl;
+#endif // DEBUG
+        //Write command to the socket to inform the server
+        //that the location has been sent.
+        bzero(buffer, sizeof(buffer));
+        buffer[0] = 'X';
+        while ((op.link = write(op.sockFD, buffer, sizeof(buffer))) < 1);
+
+        //Wait for the server to reply with confirmation that
+        //the location has been processed.
+        bzero(buffer, sizeof(buffer));
+        while(buffer[0] != 'K') {
+            bzero(buffer, sizeof(buffer));
+            while ((op.link = read(op.sockFD, buffer, sizeof(buffer))) < 1);
+        }
         them = get_distances(f5, &me);
+#ifdef DEBUG
+    cout << "Distances Recieved." << endl;
+#endif // DEBUG
         display_positions(them);
+#ifdef DEBUG
+    cout << "Distances Decoded." << endl;
+#endif // DEBUG
     }
 
     return 0;
@@ -46,15 +81,24 @@ void install_upkg(UserPackage * upk, string basefile, string ctxfile, string pkf
     readContextBase(fs, upk->m, upk->p, upk->r, upk->gens, upk->ords);
     upk->context = new FHEcontext(upk->m, upk->p, upk->r, upk->gens, upk->ords);
     fs.close();
+#ifdef DEBUG
+    cout << "Base built." << endl;
+#endif // DEBUG
 
     fs.open(&ctxfile[0], fstream::in);
     fs >> *upk->context;
     fs.close();
+#ifdef DEBUG
+    cout << "Context copied." << endl;
+#endif // DEBUG
 
     fs.open(&pkfile[0], fstream::in);
-    upk->publicKey = new FHEPubKey(*upk->context);
+    //upk->publicKey = new FHEPubKey(*upk->context);
     fs >> *upk->publicKey;
     fs.close();
+#ifdef DEBUG
+    cout << "Public Key Received." << endl;
+#endif // DEBUG
 
     upk->secretKey = new FHESecKey(*upk->context);
     G = upk->context->alMod.getFactorsOverZZ()[0];
@@ -62,6 +106,9 @@ void install_upkg(UserPackage * upk, string basefile, string ctxfile, string pkf
     addSome1DMatrices(*upk->secretKey);
     upk->ea = new EncryptedArray(*upk->context, G);
     upk->nslots = upk->ea->size();
+#ifdef DEBUG
+    cout << "Scheme Install Complete." << endl;
+#endif // DEBUG
 }
 
 /***************************
@@ -101,9 +148,20 @@ Ctxt encrypt_location_x(int x, int y, UserPackage * upk)
 	for (int i = 2; i < upk->publicKey->getContext().ea->size(); i++) {
 		loc.push_back(0);
 	}
+#ifdef DEBUG
+    cout << "GPS GOT." << endl;
+#endif // DEBUG
 
 	Ctxt cloc(*upk->publicKey);
+#ifdef DEBUG
+    cout << "Ctxt prepared." << endl;
+#endif // DEBUG
+
 	upk->publicKey->getContext().ea->encrypt(cloc, *upk->publicKey, loc);
+
+#ifdef DEBUG
+    cout << "LOCATION ENCRYPTED." << endl;
+#endif // DEBUG
 
 	return cloc;
 }
@@ -115,12 +173,16 @@ Ctxt encrypt_location_x(int x, int y, UserPackage * upk)
  *gps coords to file.
  **********************/
 int send_location(UserPackage * upk, string outfile) {
+
     fstream fs;
-    fs.open(&outfile[0], fstream::out | fstream::trunc);
+
     pair<int, int> me = get_gps_x();
     Ctxt output = encrypt_location_x(me.first, me.second, upk);
+
+    fs.open(&outfile[0], fstream::out | fstream::trunc);
     fs << output;
     fs.close();
+
     return 1;
 }
 
