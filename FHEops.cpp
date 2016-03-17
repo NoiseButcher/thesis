@@ -12,6 +12,7 @@ int main(int argc, char * argv[]) {
 
     string filename4 = "Prx.Loc";
     string filename5 = "Prx.Dis";
+    string filename6 = "Cli.PubKey";
     vector<Ctxt> them;
     fstream fs;
     ServerData primary;
@@ -68,7 +69,7 @@ int main(int argc, char * argv[]) {
     cout << "New Co-ords recieved." << endl;
 #endif // DEBUG
 
-                them = handle_user(them, &primary, input, filename5);
+                them = handle_user(them, &primary, input, filename5, filename6);
 #ifdef DEBUG
     cout << "New Output Generated." << endl;
 #endif // DEBUG
@@ -101,19 +102,16 @@ int main(int argc, char * argv[]) {
     cout << "New Co-ords recieved." << endl;
 #endif // DEBUG
 
-            them = handle_new_user(them, &primary, input, filename5);
+            them = handle_new_user(them, &primary, input, filename5, filename6);
 
             //Inform the client that the location has been processed.
             bzero(buffer, sizeof(buffer));
             buffer[0] = 'K';
-            while ((sl.link = write(sl.links[primary.users], buffer, sizeof(buffer))) < 1);
+            while ((sl.link = write(sl.links[primary.users - 1], buffer, sizeof(buffer))) < 1);
 
 
             sl.links.push_back(0);
             sl.link = 0;
-#ifdef DEBUG
-    cout << "Output Generated." << endl;
-#endif // DEBUG
         }
 
     }
@@ -127,8 +125,8 @@ int main(int argc, char * argv[]) {
  *structure.
  *******************************/
 int generate_scheme(ServerData * sd) {
-    long long int p = 2;
-    long r = 8;
+    long long int p = 257;
+    long r = 1;
     long L = 25;
     long security = 128;
     long m = 0;
@@ -140,11 +138,19 @@ int generate_scheme(ServerData * sd) {
     m = FindM(security, L, c, p, d, 3, 0);
     sd->context = new FHEcontext(m, p, r);
     buildModChain(*sd->context, L, c);
+
+    /*******************
+     *This requires work
+     *******************/
     sd->secretKey = new FHESecKey(*sd->context);
     sd->publicKey = sd->secretKey;
     G = sd->context->alMod.getFactorsOverZZ()[0];
-    //sd->secretKey.GenSecKey(w);
-    //addSome1DMatrices(sd->secretKey);
+    sd->secretKey->GenSecKey(w);
+    addSome1DMatrices(*sd->secretKey);
+    /*******************
+     *This requires work
+     *******************/
+
     sd->ea = new EncryptedArray(*sd->context, G);
     sd->nslots = sd->ea->size();
 
@@ -173,12 +179,12 @@ int generate_upkg(ServerData * sd) {
     cout << "ContextBase written to " << filename1 << endl;
 
     keyFile.open(&filename2[0], fstream::out | fstream::trunc);
-    keyFile << *sd->context << endl;
+    keyFile << *sd->context;
     keyFile.close();
     cout << "Context written to " << filename2 << endl;
 
     keyFile.open(&filename3[0], fstream::out | fstream::trunc);
-    keyFile << *sd->publicKey << endl;
+    keyFile << *sd->publicKey;
     keyFile.close();
     cout << "PubKey written to " << filename3 << endl;
 
@@ -192,10 +198,13 @@ int generate_upkg(ServerData * sd) {
  *should correspond to the square of
  *the distance to each other user
  *****************************/
-Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd) {
+Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd, const FHEPubKey &pk) {
     int i;
 
     Ctxt cx(*sd->publicKey);
+    Ctxt vx(pk);
+    vector<long> px;
+
     vector<long> pvec;
 
     for (int i = 0; i < sd->publicKey->getContext().ea->size(); i++) {
@@ -207,12 +216,19 @@ Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd) {
 
     for (i=0; i < locs.size(); i++) {
         Ctxt zx(locs[i]); //Create a copy of the i'th co-ords
-        zx = compute(zx, input, sd); //determine their position relative to input co-ords
+        zx = compute(zx, input, *sd->publicKey); //determine their position relative to input co-ords
         zx.getContext().ea->shift(zx, i); //shift the position in the final ciphertext
         cx+=zx; //Since cx is an all zero ciphertext, adding a shifted element should work...
     }
 
-    return cx;
+    /**********************
+     *And here we have
+     *a security bottleneck.
+     **********************/
+    sd->ea->decrypt(cx, *sd->secretKey, px);
+    pk.getContext().ea->encrypt(vx, pk, px);
+
+    return vx;
 }
 
 /**************************
@@ -220,17 +236,17 @@ Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd) {
  *that contains the x^2 + y^2 value of
  *two co-ordinates.
  **************************/
-Ctxt compute(Ctxt c1, Ctxt c2, ServerData * sd) {
+Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk) {
 
     vector<long> pvec;
-    Ctxt purge(*sd->publicKey);
+    Ctxt purge(pk);
 
     pvec.push_back(1);
-    for (int i = 1; i < sd->publicKey->getContext().ea->size(); i++) {
+    for (int i = 1; i < pk.getContext().ea->size(); i++) {
 		pvec.push_back(0);
 	}
 
-    sd->ea->getContext().ea->encrypt(purge, *sd->publicKey, pvec);
+    pk.getContext().ea->encrypt(purge, pk, pvec);
 
 	c1.addCtxt(c2, true); //(x1, y1) - (x2, y2)
 	c1.square(); //(x^2, y^2)
@@ -249,13 +265,20 @@ Ctxt compute(Ctxt c1, Ctxt c2, ServerData * sd) {
  *return an output to them, then rebuild
  *the co-ordinate vector.
  *********************************/
-vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname) {
+vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile) {
 
     fstream fs;
 
+    //Import the client's public key
+    fs.open(&keyfile[0], fstream::in);
+    FHEPubKey pk(*sd->context);
+    fs >> pk;
+    fs.close();
+
+    //Generate an output using for the connected client.
     fs.open(&outname[0], fstream::out | fstream::trunc);
-    Ctxt out = generate_output(locs, newusr, sd);
-    fs << out << endl;
+    Ctxt out = generate_output(locs, newusr, sd, pk);
+    fs << out;
     fs.close();
 
     vector<Ctxt> updated(locs.begin() + 1, locs.end());
@@ -270,14 +293,21 @@ vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, strin
  *except does not change the current
  *vector of ciphertexts
  *********************/
-vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname) {
+vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile) {
 
     vector<Ctxt> updated;
 
     if (sd->users > 1) {
+
         fstream fs;
+        //Import the client's public key
+        fs.open(&keyfile[0], fstream::in);
+        FHEPubKey pk(*sd->context);
+        fs >> pk;
+        fs.close();
+
         fs.open(&outname[0], fstream::out | fstream::trunc);
-        Ctxt out = generate_output(locs, newusr, sd);
+        Ctxt out = generate_output(locs, newusr, sd, pk);
         fs << out << endl;
         fs.close();
     }

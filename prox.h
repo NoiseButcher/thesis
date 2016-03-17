@@ -27,6 +27,7 @@ struct UserPackage {
 	FHESecKey *secretKey;
 	EncryptedArray *ea;
 	FHEPubKey *publicKey;
+	FHEPubKey *serverKey;
 	long nslots;
 };
 
@@ -41,7 +42,7 @@ struct ServerLink {
 pair<int, int> get_gps_x();
 Ctxt encrypt_location_x(int x, int y, UserPackage * upk);
 void install_upkg(UserPackage * upk, string basefile, string ctxfile, string pkfile);
-int send_location(UserPackage * upk, string outfile);
+int send_location(UserPackage * upk, string outfile, string keyfile);
 vector<long> get_distances(string infile, UserPackage * upk);
 void display_positions(vector<long> d);
 int prepare_socket(ServerLink * sl, char * argv[]);

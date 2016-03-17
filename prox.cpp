@@ -17,6 +17,7 @@ int main(int argc, char * argv[]) {
     string f3 = "Prox.PubKey";
     string f4 = "Prx.Loc";
     string f5 = "Prx.Dis";
+    string f6 = "Cli.PubKey";
     vector<long> them;
     char buffer[256];
     op.link = 0;
@@ -38,7 +39,7 @@ int main(int argc, char * argv[]) {
     cout << "FHE Scheme installed." << endl;
 #endif // DEBUG
 
-    while(send_location(&me, f4) == 1) {
+    while(send_location(&me, f4, f6) == 1) {
 #ifdef DEBUG
     cout << "Location Sent." << endl;
 #endif // DEBUG
@@ -55,6 +56,7 @@ int main(int argc, char * argv[]) {
             bzero(buffer, sizeof(buffer));
             while ((op.link = read(op.sockFD, buffer, sizeof(buffer))) < 1);
         }
+
         them = get_distances(f5, &me);
 #ifdef DEBUG
     cout << "Distances Recieved." << endl;
@@ -92,18 +94,23 @@ void install_upkg(UserPackage * upk, string basefile, string ctxfile, string pkf
     cout << "Context copied." << endl;
 #endif // DEBUG
 
-    fs.open(&pkfile[0], fstream::in);
-    //upk->publicKey = new FHEPubKey(*upk->context);
-    fs >> *upk->publicKey;
-    fs.close();
-#ifdef DEBUG
-    cout << "Public Key Received." << endl;
-#endif // DEBUG
-
+    //Generate my key pair and switching matrix.
     upk->secretKey = new FHESecKey(*upk->context);
+    upk->publicKey = upk->secretKey;
     G = upk->context->alMod.getFactorsOverZZ()[0];
     upk->secretKey->GenSecKey(64);
     addSome1DMatrices(*upk->secretKey);
+
+    //Get the server's public key.
+    fs.open(&pkfile[0], fstream::in);
+    upk->serverKey = new FHEPubKey(*upk->context);
+    fs >> *upk->serverKey;
+    fs.close();
+
+#ifdef DEBUG
+    cout << "Server Public Key Received." << endl;
+#endif // DEBUG
+
     upk->ea = new EncryptedArray(*upk->context, G);
     upk->nslots = upk->ea->size();
 #ifdef DEBUG
@@ -145,19 +152,19 @@ Ctxt encrypt_location_x(int x, int y, UserPackage * upk)
 	loc.push_back((long)x);
 	loc.push_back((long)y);
 
-	for (int i = 2; i < upk->publicKey->getContext().ea->size(); i++) {
+	for (int i = 2; i < upk->serverKey->getContext().ea->size(); i++) {
 		loc.push_back(0);
 	}
 #ifdef DEBUG
     cout << "GPS GOT." << endl;
 #endif // DEBUG
 
-	Ctxt cloc(*upk->publicKey);
+	Ctxt cloc(*upk->serverKey);
 #ifdef DEBUG
     cout << "Ctxt prepared." << endl;
 #endif // DEBUG
 
-	upk->publicKey->getContext().ea->encrypt(cloc, *upk->publicKey, loc);
+	upk->serverKey->getContext().ea->encrypt(cloc, *upk->serverKey, loc);
 
 #ifdef DEBUG
     cout << "LOCATION ENCRYPTED." << endl;
@@ -172,7 +179,7 @@ Ctxt encrypt_location_x(int x, int y, UserPackage * upk)
  *written the encrypted
  *gps coords to file.
  **********************/
-int send_location(UserPackage * upk, string outfile) {
+int send_location(UserPackage * upk, string outfile, string keyfile) {
 
     fstream fs;
 
@@ -181,6 +188,10 @@ int send_location(UserPackage * upk, string outfile) {
 
     fs.open(&outfile[0], fstream::out | fstream::trunc);
     fs << output;
+    fs.close();
+
+    fs.open(&keyfile[0], fstream::out | fstream::trunc);
+    fs << *upk->publicKey;
     fs.close();
 
     return 1;
