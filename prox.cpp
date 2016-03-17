@@ -19,6 +19,7 @@ int main(int argc, char * argv[]) {
     string f5 = "Prx.Dis";
     string f6 = "Cli.PubKey";
     vector<long> them;
+    struct stat checkFile;
     char buffer[256];
     op.link = 0;
 
@@ -48,6 +49,7 @@ int main(int argc, char * argv[]) {
         bzero(buffer, sizeof(buffer));
         buffer[0] = 'X';
         while ((op.link = write(op.sockFD, buffer, sizeof(buffer))) < 1);
+        op.link = 0;
 
         //Wait for the server to reply with confirmation that
         //the location has been processed.
@@ -55,16 +57,23 @@ int main(int argc, char * argv[]) {
         while(buffer[0] != 'K') {
             bzero(buffer, sizeof(buffer));
             while ((op.link = read(op.sockFD, buffer, sizeof(buffer))) < 1);
+            op.link = 0;
+            cout << buffer << endl;
         }
 
-        them = get_distances(f5, &me);
+        //Panic button for first user. The file will not exist.
+        if ((stat(&f5[0], &checkFile) == 0) == true) {
+
+            them = get_distances(f5, &me);
 #ifdef DEBUG
-    cout << "Distances Recieved." << endl;
+    cout << "Distances Received." << endl;
 #endif // DEBUG
-        display_positions(them);
+            display_positions(them);
 #ifdef DEBUG
     cout << "Distances Decoded." << endl;
 #endif // DEBUG
+        }
+
     }
 
     return 0;
@@ -220,10 +229,10 @@ vector<long> get_distances(string infile, UserPackage * upk) {
  **********************/
 void display_positions(vector<long> d) {
     int i;
-    for (i=0; i=d.size(); i++) {
+    for (i=0; i<10; i++) {
         cout << "User " << i << " is ";
         cout << sqrt(d[i]) << "m ";
-        cout << "from your position";
+        cout << "from your position." << endl;
 
     }
 }

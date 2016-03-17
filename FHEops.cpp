@@ -108,10 +108,10 @@ int main(int argc, char * argv[]) {
             bzero(buffer, sizeof(buffer));
             buffer[0] = 'K';
             while ((sl.link = write(sl.links[primary.users - 1], buffer, sizeof(buffer))) < 1);
-
+            sl.link = 0;
 
             sl.links.push_back(0);
-            sl.link = 0;
+
         }
 
     }
