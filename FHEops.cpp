@@ -2,7 +2,6 @@
 #include <sys/resource.h>
 
 #define DEBUG
-
 /***********************************
  *File generator program
  *Creates a .SecKey, .CtxtBase and .Ctxt file
