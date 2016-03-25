@@ -1,7 +1,6 @@
 #ifndef FHEOPS_H
 #define FHEOPS_H
 
-#include <fstream>
 #include <unistd.h>
 #include <NTL/lzz_pXFactoring.h>
 #include "FHE.h"
@@ -17,6 +16,8 @@
 #include <netdb.h>
 #include <math.h>
 #include <sstream>
+#include <fstream>
+#include <iostream>
 
 struct UserPackage {
     unsigned long m;
@@ -58,5 +59,9 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk);
 vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile);
 vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile);
 int prepare_server_socket(ServerLink * sl, char * argv[]);
+int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl);
+int write_to_socket(char ** buffer, int blocksize, ServerLink * sl);
+bool send_ack(ServerLink * sl);
+bool recv_ack(ServerLink * sl);
 
 #endif

@@ -3,6 +3,7 @@
 
 #define DEBUG
 #define PC
+//#define SOCKETMODE
 //#define ANDROID
 /***********************************
 Client side program to be handled as
@@ -16,70 +17,84 @@ a stand alone executable.
   and parameter checking, all data exchanges between
   the client and server are done with files. Client
   side must enter the GPS co-ords manually.
-- ANDROID mode is for when the exe is part of an
+- ANDROID mode is for when the executable is part of an
   android application as a resource. No files used
   in this mode, as the standard I/O for the program is
   used to stream information to the wrapping application.
  ************************************/
-int main(int argc, char * argv[]) {
+int main(int argc, char * argv[])
+{
+    /*********************
+     *Client instance data
+     *structures and buffers
+     *for per-instance operation.
+     *********************/
+    ServerLink op;
+    UserPackage me;
+    vector<long> them;
+    struct stat checkFile;
+    char * buffer = new char[4096];
+
+    /**
+    Sanity-check buffer & transfer volume zeroing
+    **/
+    bzero(buffer, sizeof(buffer));
+    op.xfer = 0;
 
 #ifdef PC
+    /**
+    Filenames for file-based
+    PC mode operations.
+    **/
     string f1 = "Prox.Base";
     string f2 = "Prox.Ctxt";
     string f3 = "Prox.PubKey";
     string f4 = "Prx.Loc";
     string f5 = "Prx.Dis";
     string f6 = "Cli.PubKey";
-#endif  //Filenames for PC mode usage.
 
-    ServerLink op;
-    UserPackage me;
-    vector<long> them;
-    struct stat checkFile;
-    char * buffer = new char[256];
-    op.xfer = 0;
-
-    //Check the arguments
-    if (argc != 3) {
-        cerr << "./prox_x portnum localhost(hostname)" << endl;
+    /**
+    Check input arguments.
+    This only requires server information
+    for the PC version. The android version uses
+    the i/o to talk to the Java software.
+    **/
+    if (argc != 3)
+    {
+        cout << "./prox_x portnum localhost(hostname)" << endl;
         return 0;
     }
 
-    //Try to create a link to the server,
-    //This will fail if the server is not ready.
-    if (!(prepare_socket(&op, argv))) {
+    /**
+    Connect to the server or throw an error if it can't.
+    **/
+    if (!(prepare_socket(&op, argv)))
+    {
         cout << "Server Unavailable.";
         return 0;
     }
 
-    bzero(buffer, sizeof(buffer));
 #ifdef DEBUG
     cout << "Connection Established." << endl;
 #endif // DEBUG
 
-#ifdef PC
     buffer[0] = 'P';
     buffer[1] = 'C';
-    if (write_to_socket(&buffer, sizeof(buffer), &op)) {
-        if (!recv_ack(&op)) {
+    if (write_to_socket(&buffer, sizeof(buffer), &op))
+    {
+        if (!recv_ack(&op))
+        {
             cout << "No ACK received." << endl;
             exit(0);
         }
+#ifdef PC
         install_upkg(&me, f1, f2, f3);
-    }
-#elif ANDROID
-    buffer[0] = 'A';
-    buffer[1] = 'D';
-    if (write_to_socket(&buffer, 256, &op)) {
-        if (!recv_ack(&op)) {
-            cout << "No ACK received." << endl;
-            exit(0);
-        }
-        install_upkg_android(&op, &me);
-    }
-#endif // ANDROID
+#elif SOCKETMODE
+        install_upkg_socket(&op, &me);
+#endif
 
-     if (!send_ack(&op)) {
+     if (!send_ack(&op))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error." << endl;
         exit(0);
@@ -90,15 +105,23 @@ int main(int argc, char * argv[]) {
     cout << "FHE Scheme installed." << endl;
 #endif // DEBUG
 
+    }
+#elif ANDROID
+    cout << "AD" << endl;
+
+#endif // PC or Android start mode.
+
 #ifdef PC
-    while(send_location(&me, f4, f6) == 1) {
-        if (!recv_ack(&op)) {
+    while (send_location(&me, f4, f6) == 1)
+#elif SOCKETMODE
+    while (send_location_socket(&me, &op) == 1)
+#endif // SOCKETMODE
+    {
+        if (!recv_ack(&op))
+        {
             cout << "No ACK received." << endl;
             exit(0);
         }
-#elif ANDROID
-    while (send_location_android(&me, &op) == 1) {
-#endif // ANDROID
 
 #ifdef DEBUG
     cout << "Location Sent." << endl;
@@ -107,14 +130,18 @@ int main(int argc, char * argv[]) {
 #ifdef PC
         //Wait for the server to reply with confirmation that
         //the location has been processed.
-        while(buffer[0] != 'K') {
+        while(buffer[0] != 'K')
+        {
             bzero(buffer, sizeof(buffer));
-            while ((op.xfer = read(op.sockFD, buffer, sizeof(buffer))) < 1);
+            while ((op.xfer = read(op.sockFD,
+                                   buffer,
+                                   sizeof(buffer))) < 1);
             op.xfer = 0;
         }
 
         //Panic button for first user. The file will not exist.
-        if ((stat(&f5[0], &checkFile) == 0) == true) {
+        if ((stat(&f5[0], &checkFile) == 0) == true)
+        {
 
             them = get_distances(f5, &me);
 #ifdef DEBUG
@@ -126,8 +153,11 @@ int main(int argc, char * argv[]) {
     cout << "Distances Decoded." << endl;
 #endif // DEBUG
         }
+
 #elif ANDROID
-        them = get_distances_android(&op, &me);
+    while (send_location_android(&me) == 1)
+    {
+        them = get_distances_android(&me);
         display_positions(them, 10);
 #endif // ANDROID
 
@@ -140,12 +170,14 @@ int main(int argc, char * argv[]) {
  *Build an encryption/decryption
  *data structure for a user.
  *******************************/
-void install_upkg(UserPackage * upk, string basefile, string ctxfile, string pkfile) {
-
+void install_upkg(UserPackage * upk, string basefile,
+                  string ctxfile, string pkfile)
+{
     fstream fs;
     fs.open(&basefile[0], fstream::in);
     readContextBase(fs, upk->m, upk->p, upk->r, upk->gens, upk->ords);
-    upk->context = new FHEcontext(upk->m, upk->p, upk->r, upk->gens, upk->ords);
+    upk->context = new FHEcontext(upk->m, upk->p, upk->r,
+                                  upk->gens, upk->ords);
     fs.close();
 
 #ifdef DEBUG
@@ -190,7 +222,7 @@ void install_upkg(UserPackage * upk, string basefile, string ctxfile, string pkf
  *installs it.
  *Afterwards streams the
  *****************************/
-void install_upkg_android(ServerLink * sl, UserPackage * upk)
+void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 {
     stringstream ss;
     char * buffer = new char[4096];
@@ -198,14 +230,17 @@ void install_upkg_android(ServerLink * sl, UserPackage * upk)
 
     //Read the context base from the socket, then
     //push it into a stream to be used with readContextBase()
-    while ((stream_from_socket(&buffer, blk, sl)) > 0) {
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
         ss << buffer;
     }
 
     readContextBase(ss, upk->m, upk->p, upk->r, upk->gens, upk->ords);
-    upk->context = new FHEcontext(upk->m, upk->p, upk->r, upk->gens, upk->ords);
+    upk->context = new FHEcontext(upk->m, upk->p, upk->r,
+                                  upk->gens, upk->ords);
 
-    if (!send_ack(sl)) {
+    if (!send_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error." << endl;
         exit(0);
@@ -213,7 +248,8 @@ void install_upkg_android(ServerLink * sl, UserPackage * upk)
     }
 
     //Stream the context information into the context structure.
-    while ((stream_from_socket(&buffer, blk, sl)) > 0) {
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
         ss << buffer;
         ss >> *upk->context;
     }
@@ -226,7 +262,8 @@ void install_upkg_android(ServerLink * sl, UserPackage * upk)
     addSome1DMatrices(*upk->secretKey);
     upk->serverKey = new FHEPubKey(*upk->context);
 
-    if (!send_ack(sl)) {
+    if (!send_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error." << endl;
         exit(0);
@@ -234,7 +271,8 @@ void install_upkg_android(ServerLink * sl, UserPackage * upk)
     }
 
     //Stream the server's public key from the socket.
-    while ((stream_from_socket(&buffer, blk, sl)) > 0) {
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
         ss << buffer;
         ss >> *upk->serverKey;
     }
@@ -242,7 +280,8 @@ void install_upkg_android(ServerLink * sl, UserPackage * upk)
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
 
-    if (!send_ack(sl)) {
+    if (!send_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error." << endl;
         exit(0);
@@ -252,10 +291,65 @@ void install_upkg_android(ServerLink * sl, UserPackage * upk)
     delete [] buffer;
 }
 
+/*******************
+ *Android mode install.
+ *Reads from standard i/o.
+ *******************/
+void install_upkg_android(UserPackage * upk)
+{
+    stringstream ss;
+    char * buffer = new char[4096];
+    int blk = 4096*sizeof(char);
+
+    readContextBase(cin, upk->m, upk->p, upk->r,
+                    upk->gens, upk->ords);
+    upk->context = new FHEcontext(upk->m, upk->p, upk->r,
+                                  upk->gens, upk->ords);
+
+    cout << "ACK" << endl;
+
+    cin.getline(buffer, 4096);
+
+    while (cin.gcount() > 0)
+    {
+        ss << buffer;
+        ss >> *upk->context;
+        bzero(buffer, sizeof(buffer));
+        cin.getline(buffer, 4096);
+    }
+
+    //Generate my key pair and switching matrix.
+    upk->secretKey = new FHESecKey(*upk->context);
+    upk->publicKey = upk->secretKey;
+    upk->G = upk->context->alMod.getFactorsOverZZ()[0];
+    upk->secretKey->GenSecKey(64);
+    addSome1DMatrices(*upk->secretKey);
+    upk->serverKey = new FHEPubKey(*upk->context);
+
+    cout << "ACK" << endl;
+
+    cin.getline(buffer, 4096);
+
+    while (cin.gcount() > 0)
+    {
+        ss << buffer;
+        ss >> *upk->serverKey;
+        bzero(buffer, sizeof(buffer));
+        cin.getline(buffer, 4096);
+    }
+
+    upk->ea = new EncryptedArray(*upk->context, upk->G);
+    upk->nslots = upk->ea->size();
+
+    cout << "ACK" << endl;
+
+    delete [] buffer;
+}
+
 /*****
-Writes a specific length of data from a socket to a buffer.
-This could possibly be made more efficient by making it
-into a stream of some sort.
+ *Writes a specific length of data from a socket to a buffer.
+ *This could possibly be made more efficient by making it
+ *into a stream of some sort.
 BOTH THIS FUNCTION AND IT'S COMPLEMENT WIPE THE BUFFER AFTER
 OPERATIONS.
 *****/
@@ -266,7 +360,6 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     sl->xfer = read(sl->sockFD, buffer, blocksize);
     p = sl->xfer;
     return p;
-
 }
 
 /*****
@@ -294,7 +387,9 @@ bool send_ack(ServerLink * sl)
     buffer[0] = 'A';
     buffer[1] = 'C';
     buffer[2] = 'K';
-    if (write_to_socket(&buffer, sizeof(buffer), sl) == sizeof(buffer)) {
+    if (write_to_socket(&buffer,
+                        sizeof(buffer), sl) == sizeof(buffer))
+    {
         delete [] buffer;
         return true;
     }
@@ -306,15 +401,18 @@ bool send_ack(ServerLink * sl)
  *Return boolean value of whether
  *and ACK command has been received.
  ******************************/
-bool recv_ack(ServerLink * sl) {
+bool recv_ack(ServerLink * sl)
+{
     char * buffer = new char[3];
     char * ack = new char[3];
     ack[0] = 'A';
     ack[1] = 'C';
     ack[2] = 'K';
     int blk = sizeof(ack);
-    while (stream_from_socket(&buffer, sizeof(buffer), sl) == blk) {
-        if (strcmp(ack, buffer) == 0) {
+    while (stream_from_socket(&buffer, sizeof(buffer), sl) == blk)
+    {
+        if (strcmp(ack, buffer) == 0)
+        {
             return true;
             delete [] buffer;
             delete [] ack;
@@ -322,6 +420,19 @@ bool recv_ack(ServerLink * sl) {
     }
     delete [] buffer;
     delete [] ack;
+    return false;
+}
+
+/****************
+ *Android ACK check
+ *for standard in.
+ ****************/
+bool recv_ack_android() {
+    string ack;
+    cin >> ack;
+    if (ack == "ACK") {
+        return true;
+    }
     return false;
 }
 
@@ -346,7 +457,8 @@ pair<int, int> get_gps_x()
 }
 
 /*************
- *I wonder what this does...
+ *Encrypt the client's current GPS location
+ *with the server's Public Key.
 ***************/
 Ctxt encrypt_location_x(int x, int y, UserPackage * upk)
 {
@@ -355,7 +467,8 @@ Ctxt encrypt_location_x(int x, int y, UserPackage * upk)
 	loc.push_back((long)x);
 	loc.push_back((long)y);
 
-	for (int i = 2; i < upk->serverKey->getContext().ea->size(); i++) {
+	for (int i = 2; i < upk->serverKey->getContext().ea->size(); i++)
+    {
 		loc.push_back(0);
 	}
 #ifdef DEBUG
@@ -406,7 +519,7 @@ int send_location(UserPackage * upk, string outfile, string keyfile)
  *then sends them via socket to the server.
  *Send's your public key immediately afterward
  *************************************/
-int send_location_android(UserPackage * upk, ServerLink * sl)
+int send_location_socket(UserPackage * upk, ServerLink * sl)
 {
     stringstream stream;
     char * buffer = new char[4096];
@@ -418,14 +531,16 @@ int send_location_android(UserPackage * upk, ServerLink * sl)
     stream << output;
     stream.read(buffer, 4096);
 
-    while (stream) {
+    while (stream)
+    {
         write_to_socket(&buffer, blk, sl);
         stream.read(buffer, 4096);
     }
 
     bzero(buffer, sizeof(buffer));
 
-    if (!recv_ack(sl)) {
+    if (!recv_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error, no ACK." << endl;
         exit(0);
@@ -435,19 +550,43 @@ int send_location_android(UserPackage * upk, ServerLink * sl)
     stream << *upk->publicKey;
     stream.read(buffer, 4096);
 
-    while (stream) {
+    while (stream)
+    {
         write_to_socket(&buffer, blk, sl);
         stream.read(buffer, 4096);
     }
 
     bzero(buffer, sizeof(buffer));
 
-    if (!recv_ack(sl)) {
+    if (!recv_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error, no ACK." << endl;
         exit(0);
 #endif
     }
+
+    return 1;
+}
+
+/*****************
+ *This seems far too simple.
+ *It probably won't work, so test it.
+ *****************/
+int send_location_android(UserPackage * upk)
+{
+    string ack;
+
+    pair<int, int> me = get_gps_x();
+    Ctxt output = encrypt_location_x(me.first, me.second, upk);
+
+    cout << output << endl;
+
+    while (recv_ack_android() == false);
+
+    cout << *upk->publicKey << endl;
+
+    while (recv_ack_android() == false);
 
     return 1;
 }
@@ -464,7 +603,6 @@ vector<long> get_distances(string infile, UserPackage * upk)
     fstream fs;
     Ctxt encrypted_distances(*upk->publicKey);
 
-
     fs.open(&infile[0], fstream::in);
     fs >> encrypted_distances;
     fs.close();
@@ -479,7 +617,7 @@ vector<long> get_distances(string infile, UserPackage * upk)
  *from your position.
  *ANDROID/SOCKET VERSION
  ***********************/
-vector<long> get_distances_android(ServerLink * sl, UserPackage * upk)
+vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk)
 {
     vector<long> d;
     Ctxt encrypted_distances(*upk->publicKey);
@@ -487,12 +625,14 @@ vector<long> get_distances_android(ServerLink * sl, UserPackage * upk)
     char * buffer = new char[4096];
     int blk = 4096*sizeof(char);
 
-    while ((stream_from_socket(&buffer, blk, sl)) > 0) {
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
         stream << buffer;
         stream >> encrypted_distances;
     }
 
-    if (!send_ack(sl)) {
+    if (!send_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error." << endl;
         exit(0);
@@ -500,6 +640,37 @@ vector<long> get_distances_android(ServerLink * sl, UserPackage * upk)
     }
 
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
+
+    delete [] buffer;
+    return d;
+}
+
+/***********************
+ *Android mode distance recovery.
+ *Pushes
+ **********************/
+vector<long> get_distances_android(UserPackage * upk)
+{
+    vector<long> d;
+    stringstream stream;
+    Ctxt encrypted_distances(*upk->publicKey);
+    char * buffer = new char[4096];
+    int blk = 4096*sizeof(char);
+
+    cin.getline(buffer, 4096);
+
+    while (cin.gcount() > 0)
+    {
+        stream << buffer;
+        stream >> encrypted_distances;
+        bzero(buffer, sizeof(buffer));
+        cin.getline(buffer, 4096);
+    }
+
+    cout << "ACK" << endl;
+
+    upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
+
     delete [] buffer;
     return d;
 }
@@ -513,11 +684,11 @@ vector<long> get_distances_android(ServerLink * sl, UserPackage * upk)
 void display_positions(vector<long> d, int cnt)
 {
     int i;
-    for (i=0; i < cnt; i++) {
+    for (i=0; i < cnt; i++)
+    {
         cout << "User " << i << " is ";
         cout << sqrt(d[i]) << "m ";
         cout << "from your position." << endl;
-
     }
 }
 
@@ -529,26 +700,33 @@ void display_positions(vector<long> d, int cnt)
 int prepare_socket(ServerLink * sl, char * argv[])
 {
     sl->port = atoi(argv[1]);
+
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
         cerr << "Error opening socket." << endl;
 		return -1;
     }
+
     if((sl->serv=gethostbyname(argv[2]))==NULL)
     {
         cerr << "Host not found." << endl;
 		return -1;
     }
+
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
     sl->servAddr.sin_family = AF_INET;
-	memcpy((char *)&sl->serv->h_addr, (char *)&sl->servAddr.sin_addr.s_addr,
+	memcpy((char *)&sl->serv->h_addr,
+            (char *)&sl->servAddr.sin_addr.s_addr,
 			sl->serv->h_length);
 	sl->servAddr.sin_port = htons(sl->port);
-	if ((sl->xfer = connect(sl->sockFD, (struct sockaddr *)&sl->servAddr,
-			sizeof(sl->servAddr))) < 0)
+
+	if ((sl->xfer = connect(sl->sockFD,
+                            (struct sockaddr *)&sl->servAddr,
+                            sizeof(sl->servAddr))) < 0)
      {
         cerr << "Failure connecting to server." << endl;
 		return -1;
      }
+
      return 1;
 }
