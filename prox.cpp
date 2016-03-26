@@ -517,7 +517,7 @@ int send_location(UserPackage * upk, string outfile, string keyfile)
  *Get's GPS co-ords from the standard IO,
  *encrypts them using the server's public key,
  *then sends them via socket to the server.
- *Send's your public key immediately afterward
+ *Sends your public key immediately afterward
  *************************************/
 int send_location_socket(UserPackage * upk, ServerLink * sl)
 {
@@ -565,6 +565,8 @@ int send_location_socket(UserPackage * upk, ServerLink * sl)
         exit(0);
 #endif
     }
+
+    delete [] buffer;
 
     return 1;
 }

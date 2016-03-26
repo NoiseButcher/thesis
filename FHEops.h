@@ -39,29 +39,55 @@ struct ServerData {
 	EncryptedArray *ea;
 	long nslots;
 	int users;
+	vector<Ctxt> positions;
 };
 
 struct ServerLink {
     int sockFD;
     int port;
-    vector <int> links;
+    int thisclient;
     int blocklen;
     socklen_t len;
     struct sockaddr_in clientAddr;
     struct sockaddr_in servAddr;
-    int link;
+    int xfer;
 };
 
+struct ClientLink {
+    pthread_mutex_t mutex;
+    ServerLink link;
+    pthread_t threadID;
+    ServerData * server;
+};
+
+/**
+UNIVERSAL FUNCTIONS
+FHE OPERATION FUNCTIONS
+**/
 int generate_scheme(ServerData * sd);
-int generate_upkg(ServerData * sd);
-Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd, const FHEPubKey &pk);
+Ctxt generate_output(Ctxt input, ServerData * sd,
+                     const FHEPubKey &pk);
 Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk);
-vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile);
-vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile);
+void *handle_client(void *param);
+
+/**
+FILE BASED FUNCTIONS
+**/
+int generate_upkg(ServerData * sd);
+vector<Ctxt> handle_user(ServerData * sd, Ctxt newusr,
+                         string outname, string keyfile);
+vector<Ctxt> handle_new_user(ServerData * sd, Ctxt newusr,
+                             string outname, string keyfile);
+
+/**
+SOCKET-BASED FUNCTIONS
+**/
+void generate_upkg_android(ServerData * sd, ServerLink * sl);
 int prepare_server_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl);
 bool send_ack(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
-
+void handle_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl);
+void handle_new_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl);
 #endif

@@ -6,52 +6,62 @@
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
  *and distributes it amongst connected clients.
- *
  ************************************/
-int main(int argc, char * argv[]) {
-
+int main(int argc, char * argv[])
+{
+    /**
+    File-mode variables
+    **/
+    fstream fs;
     string filename4 = "Prx.Loc";
     string filename5 = "Prx.Dis";
     string filename6 = "Cli.PubKey";
-    vector<Ctxt> them;
-    fstream fs;
-    ServerData primary;
-    ServerLink sl;
 
-    sl.links.push_back(0);
-    sl.link = 0;
+    /**
+    Data structures and buffers
+    **/
+    ServerData sd;
+    ServerLink sl;
+    int maxthreads;
     char * buffer = new char[4096];
     int blk = sizeof(buffer);
 
-    if (argc != 2) {
-        cout << "./FHEops_x portnum" << endl;
+    /**
+    Argument check... just in case...
+    **/
+    if (argc != 3)
+    {
+        cout << "./FHEops_x portnum maxclients" << endl;
         return 0;
     }
+
+    maxthreads = atoi(argv[2]);
 
     prepare_server_socket(&sl, argv);
 #ifdef DEBUG
     cout << "Socket Prepped." << endl;
 #endif // DEBUG
-    generate_scheme(&primary);
+    generate_scheme(&sd);
 #ifdef DEBUG
     cout << "FHE Scheme generated." << endl;
 #endif // DEBUG
-    generate_upkg(&primary);
+    generate_upkg(&sd);
 #ifdef DEBUG
     cout << "FHE user package generated." << endl;
 #endif // DEBUG
     int i = 0;
 
 
-    while(true) {
-
-        if (primary.users > 0) {
-
-            for (i = 0; i < primary.users; i++) {
-
+    while(true)
+    {
+        if (sd.users > 0)
+        {
+            for (i = 0; i < sd.users; i++)
+            {
                 //Wait to hear from the client that they have sent their location.
                 bzero(buffer, sizeof(buffer));
-                while (buffer[0] != 'X') {
+                while (buffer[0] != 'X')
+                {
                     bzero(buffer, sizeof(buffer));
                     while ((sl.link = read(sl.links[i],
                                            buffer,
@@ -59,7 +69,7 @@ int main(int argc, char * argv[]) {
                     sl.link = 0;
                 }
 
-                Ctxt input(*primary.publicKey);
+                Ctxt input(*sd.publicKey);
 #ifdef DEBUG
     cout << "User " << i << " being processed." << endl;
 #endif // DEBUG
@@ -86,22 +96,24 @@ int main(int argc, char * argv[]) {
             }
         }
 
-        if ((sl.links[primary.users] = accept(sl.sockFD,
-                                              (struct sockaddr *)&sl.clientAddr,
-                                              &sl.len)) > 0) {
+        if ((sl.links[sd.users] = accept(sl.sockFD,
+                                        (struct sockaddr *)&sl.clientAddr,
+                                        &sl.len)) > 0)
+        {
 #ifdef DEBUG
     cout << "New User Accepted." << endl;
 #endif // DEBUG
             //Wait to hear from the client that they have sent their location.
             bzero(buffer, sizeof(buffer));
-            while (buffer[0] != 'X') {
+            while (buffer[0] != 'X')
+            {
                 bzero(buffer, sizeof(buffer));
-                while ((sl.link = read(sl.links[primary.users],
+                while ((sl.link = read(sl.links[sd.users],
                                        buffer, sizeof(buffer))) < 1);
                 sl.link = 0;
             }
 
-            Ctxt input(*primary.publicKey);
+            Ctxt input(*sd.publicKey);
 
             fs.open(&filename4[0], fstream::in);
             fs >> input;
@@ -116,16 +128,48 @@ int main(int argc, char * argv[]) {
             //Inform the client that the location has been processed.
             bzero(buffer, sizeof(buffer));
             buffer[0] = 'K';
-            while ((sl.link = write(sl.links[primary.users - 1],
+            while ((sl.link = write(sl.links[sd.users - 1],
                                     buffer, sizeof(buffer))) < 1);
             sl.link = 0;
 
             sl.links.push_back(0);
+        }
+    }
 
+    while (true)
+    {
+        /**
+        Handle new connections if there is space.
+        **/
+        if (sd->users < maxthreads)
+        {
+            sl.len = sizeof(sl.clientAddr);
+            ClientLink client;
+            client.server = &sd;
+            if ((client.link.sockFD = accept(sl.sockFD,
+                                        (struct sockaddr *)&sl.clientAddr,
+                                        &sl.len)) > 0)
+            {
+#ifdef DEBUG
+                cout << "New Client Accepted" << endl;
+#endif // DEBUG
+                pthread_create(&client.threadID,
+                               NULL,
+                               handle_client,
+                               (void*)&client);
+
+            }
+            else
+            {
+                cout << "Error Accepting Client" << endl;
+            }
+        }
+        else
+        {
+            //Do something here...
         }
 
     }
-
     return 0;
 }
 
@@ -183,8 +227,8 @@ int generate_scheme(ServerData * sd) {
  *Generates files for the clients to use
  *so they can have access to the FHE scheme
  **************************************/
-int generate_upkg(ServerData * sd) {
-
+int generate_upkg(ServerData * sd)
+{
     fstream keyFile;
     string filename2 = "Prox.Ctxt";
     string filename3 = "Prox.PubKey";
@@ -200,7 +244,6 @@ int generate_upkg(ServerData * sd) {
     cout << "PubKey written to " << filename3 << endl;
 
     return 1;
-
 }
 
 /**********************************
@@ -221,12 +264,14 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     stream.read(buffer, 4096);
 
-    while (stream) {
+    while (stream)
+    {
         write_to_socket(&buffer, blk, sl);
         stream.read(buffer, 4096);
     }
 
-    if (!recv_ack(sl)) {
+    if (!recv_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error, no ACK." << endl;
         exit(0);
@@ -238,12 +283,14 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     stream.read(buffer, 4096);
 
-    while (stream) {
+    while (stream)
+    {
         write_to_socket(&buffer, blk, sl);
         stream.read(buffer, 4096);
     }
 
-    if (!recv_ack(sl)) {
+    if (!recv_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error, no ACK." << endl;
         exit(0);
@@ -255,12 +302,14 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     stream.read(buffer, 4096);
 
-    while (stream) {
+    while (stream)
+    {
         write_to_socket(&buffer, blk, sl);
         stream.read(buffer, 4096);
     }
 
-    if (!recv_ack(sl)) {
+    if (!recv_ack(sl))
+    {
 #ifdef DEBUG
         cout << "Socket buffer error, no ACK." << endl;
         exit(0);
@@ -276,33 +325,52 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
  *should correspond to the square of
  *the distance to each other user
  *****************************/
-Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd, const FHEPubKey &pk)
+Ctxt generate_output(Ctxt input, ServerData * sd, const FHEPubKey &pk)
 {
     int i;
 
-    Ctxt cx(*sd->publicKey);
+    /**
+    Initialise an empty vector and ciphertext to
+    contain the output encrypted with the client's
+    public key.
+    **/
     Ctxt vx(pk);
     vector<long> px;
 
+    /**
+    Blank vector and ciphertext to facilitate operations
+    on server key encrypted input. pvec() is initialised with
+    as an empty vector encrypted with the server's public key.
+    **/
+    Ctxt cx(*sd->publicKey);
     vector<long> pvec;
 
-    for (int i = 0; i < sd->publicKey->getContext().ea->size(); i++) {
+    for (int i = 0; i < sd->publicKey->getContext().ea->size(); i++)
+    {
 		pvec.push_back(0);
 	}
 
-    //Create a base Ctxt which has all 0 members
 	sd->ea->getContext().ea->encrypt(cx, *sd->publicKey, pvec);
 
-    for (i=0; i < locs.size(); i++) {
-        Ctxt zx(locs[i]); //Create a copy of the i'th co-ords
-        zx = compute(zx, input, *sd->publicKey); //determine their position relative to input co-ords
-        zx.getContext().ea->shift(zx, i); //shift the position in the final ciphertext
-        cx+=zx; //Since cx is an all zero ciphertext, adding a shifted element should work...
+	/**
+	Iterate over the current collection of encrypted coordinate
+	sets and create a single ciphertext corresponding to the
+	Euclidean distances between the input and all of the existing
+	co-ordinates.
+	**/
+    for (i=0; i < sd->positions.size(); i++)
+    {
+        Ctxt zx(sd->positions[i]); /**Copy coordinate set i to a temporary Ctxt**/
+        zx = compute(zx, input, *sd->publicKey); /**Calculate distance**/
+        zx.getContext().ea->shift(zx, i); /**Offset Ctxt based on index i**/
+        cx+=zx; /**Add offset ciphertext to empty output**/
     }
 
     /**********************
-     *And here we have
-     *a security bottleneck.
+     *And here we have a security bottleneck.
+     *Decrypt the ciphertext containing the distances
+     *using the server's secret key.
+     *Encrypt it again using the client's public key.
      **********************/
     sd->ea->decrypt(cx, *sd->secretKey, px);
     pk.getContext().ea->encrypt(vx, pk, px);
@@ -313,30 +381,34 @@ Ctxt generate_output(vector<Ctxt> locs, Ctxt input, ServerData * sd, const FHEPu
 /**************************
  *Creates a single element ciphertext
  *that contains the x^2 + y^2 value of
- *two co-ordinates.
+ *two Cartesian co-ordinate pairs.
  **************************/
 Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 {
-
+    /**
+    Create a "purge" vector to remove extraneous values
+    from the ciphertext after computation.
+    purge = Enc[1 0 0 0 ...]
+    **/
     vector<long> pvec;
     Ctxt purge(pk);
-
     pvec.push_back(1);
-    for (int i = 1; i < pk.getContext().ea->size(); i++) {
+
+    for (int i = 1; i < pk.getContext().ea->size(); i++)
+    {
 		pvec.push_back(0);
 	}
 
     pk.getContext().ea->encrypt(purge, pk, pvec);
 
-	c1.addCtxt(c2, true); //(x1, y1) - (x2, y2)
-	c1.square(); //(x^2, y^2)
+	c1.addCtxt(c2, true); /**c1 = Enc[(x1-x2) (y1-y2) 0 0 ...] **/
+	c1.square(); /**c1 = Enc[(x1-x2)^2 (y1-y2)^2 0 0 ...] **/
 
-	Ctxt inv(c1);
+	Ctxt inv(c1); /**inv = Enc[(y1-y2)^2 0 .. 0 (x1-x2)^2] **/
 	inv.getContext().ea->rotate(inv, -1);
 
-	c1+=inv; //(x^2 + y^2, y^2 + x^2)
-	c1*=purge; //(x^2 +y^2, 0)
-
+	c1+=inv; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. 0 (x1-x2)^2] **/
+	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
 	return c1;
 }
 
@@ -370,16 +442,89 @@ vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, strin
 }
 
 /**********************
+ *Socket code to handle connection between client and
+ *server, takes a client's encrypted location and the vector
+ *of encrypted co-ordinate sets as input.
+ *Returns the updated vector of co-ords as an output
+ *and sends the distances to the client via socket.
+ *********************/
+void handle_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl)
+{
+    stringstream stream;
+    char * buffer = new char[4096];
+    int blk = sizeof(buffer);
+
+    /**
+    Create temporary copy of client's public key,
+    then import key data from socket.
+    **/
+    FHEPubKey pk(*sd->context);
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
+        stream << buffer;
+        stream >> pk;
+    }
+
+    /**
+    Send ACK when key has been acquired.
+    **/
+    if (!send_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
+
+    /**
+    Generate output ciphertext
+    **/
+    Ctxt out = generate_output(newusr, sd, pk);
+
+    /**
+    Push to socket.
+    **/
+    stream << out;
+    stream.read(buffer, 4096);
+
+    while(stream)
+    {
+        write_to_socket(&buffer, blk, sl);
+        stream.read(buffer, 4096);
+    }
+
+    /**
+    Wait for ACK.
+    **/
+    if (!recv_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error, no ACK." << endl;
+        exit(0);
+#endif
+    }
+
+    /**
+    Update co-ordinate vector, removing the old
+    co-ords and appending the new ones.
+    **/
+    sd->positions[sl->thisclient] = newusr;
+
+    delete [] buffer;
+}
+
+/**********************
  *Same as the standard handle_user()
  *except does not change the current
  *vector of ciphertexts
  *********************/
-vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile)
+vector<Ctxt> handle_new_user(ServerData * sd,
+                             Ctxt newusr, string outname, string keyfile)
 {
     vector<Ctxt> updated;
 
-    if (sd->users > 1) {
-
+    if (sd->users > 0)
+    {
         fstream fs;
         //Import the client's public key
         fs.open(&keyfile[0], fstream::in);
@@ -388,16 +533,93 @@ vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, s
         fs.close();
 
         fs.open(&outname[0], fstream::out | fstream::trunc);
-        Ctxt out = generate_output(locs, newusr, sd, pk);
+        Ctxt out = generate_output(newusr, sd, pk);
         fs << out << endl;
         fs.close();
     }
 
-    updated = locs;
+    updated = sd->positions;
     updated.push_back(newusr);
     sd->users++;
 
     return updated;
+}
+
+/*******************************
+ *Handle a new user connecting to the server for the first time.
+ *Either process their location and send it, then append
+ *their position to the current vector,
+ *Or simply send add them to the vector if they are the first
+ *client to join.
+ *******************************/
+void handle_new_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl)
+{
+    /**
+    If this client is not the first,
+    process their location.
+    **/
+    if (sd->users > 0)
+    {
+        stringstream stream;
+        char * buffer = new char[4096];
+        int blk = sizeof(buffer);
+
+        /**
+        Create temporary copy of client's public key,
+        then import key data from socket.
+        **/
+        FHEPubKey pk(*sd->context);
+        while ((stream_from_socket(&buffer, blk, sl)) > 0)
+        {
+            stream << buffer;
+            stream >> pk;
+        }
+
+        /**
+        Send ACK when key has been acquired.
+        **/
+        if (!send_ack(sl))
+        {
+#ifdef DEBUG
+            cout << "Socket buffer error." << endl;
+            exit(0);
+#endif
+        }
+
+        /**
+        Generate output ciphertext
+        **/
+        Ctxt out = generate_output(newusr, sd, pk);
+
+        /**
+        Push to socket.
+        **/
+        stream << out;
+        stream.read(buffer, 4096);
+
+        while(stream)
+        {
+            write_to_socket(&buffer, blk, sl);
+            stream.read(buffer, 4096);
+        }
+
+        /**
+        Wait for ACK.
+        **/
+        if (!recv_ack(sl))
+        {
+#ifdef DEBUG
+            cout << "Socket buffer error, no ACK." << endl;
+            exit(0);
+#endif
+        }
+
+        delete [] buffer;
+    }
+
+    sd->positions.push_back(newusr);
+    sl->thisclient = sd->users;
+    sd->users++;
 }
 
 /*****************************
@@ -407,23 +629,27 @@ vector<Ctxt> handle_new_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, s
 int prepare_server_socket(ServerLink * sl, char * argv[])
 {
     sl->port = atoi(argv[1]);
+
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
         cerr << "Error opening socket." << endl;
 		return -1;
     }
+
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
     sl->servAddr.sin_family = AF_INET;
 	sl->servAddr.sin_addr.s_addr = INADDR_ANY;
 	sl->servAddr.sin_port = htons(sl->port);
-	if (bind(sl->sockFD, (struct sockaddr *)&sl->servAddr, sizeof(sl->servAddr))
-			< 0) {
+
+	if (bind(sl->sockFD, (struct sockaddr *)&sl->servAddr,
+            sizeof(sl->servAddr)) < 0)
+    {
 		cerr << "Failed to bind server to socket." << endl;
 		return -1;
 	}
 
 	listen(sl->sockFD, sl->blocklen);
-	sl->len = sizeof(sl->clientAddr);
+
 	return 1;
 }
 
@@ -501,3 +727,11 @@ bool recv_ack(ServerLink * sl)
     return false;
 }
 
+/*****************************
+ *Multithreading handler for the client
+ *connection.
+ *****************************/
+void *handle_client(void *param)
+{
+    ClientLink * me = (ClientLink*) param;
+}
