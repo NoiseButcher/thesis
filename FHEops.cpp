@@ -7,6 +7,8 @@
  *Generates the basis for the security scheme
  *and distributes it amongst connected clients.
  ************************************/
+ServerData sd;
+
 int main(int argc, char * argv[])
 {
     /**
@@ -20,9 +22,9 @@ int main(int argc, char * argv[])
     /**
     Data structures and buffers
     **/
-    ServerData sd;
     ServerLink sl;
     int maxthreads;
+    sd.mutex = PTHREAD_MUTEX_INITIALIZER;
     char * buffer = new char[4096];
     int blk = sizeof(buffer);
 
@@ -45,106 +47,18 @@ int main(int argc, char * argv[])
 #ifdef DEBUG
     cout << "FHE Scheme generated." << endl;
 #endif // DEBUG
-    generate_upkg(&sd);
-#ifdef DEBUG
-    cout << "FHE user package generated." << endl;
-#endif // DEBUG
-    int i = 0;
-
-
-    while(true)
-    {
-        if (sd.users > 0)
-        {
-            for (i = 0; i < sd.users; i++)
-            {
-                //Wait to hear from the client that they have sent their location.
-                bzero(buffer, sizeof(buffer));
-                while (buffer[0] != 'X')
-                {
-                    bzero(buffer, sizeof(buffer));
-                    while ((sl.link = read(sl.links[i],
-                                           buffer,
-                                           sizeof(buffer))) < 1);
-                    sl.link = 0;
-                }
-
-                Ctxt input(*sd.publicKey);
-#ifdef DEBUG
-    cout << "User " << i << " being processed." << endl;
-#endif // DEBUG
-
-                fs.open(&filename4[0], fstream::in);
-                fs >> input;
-                fs.close();
-
-#ifdef DEBUG
-    cout << "New Co-ords recieved." << endl;
-#endif // DEBUG
-
-                them = handle_user(them, &primary,
-                                   input, filename5, filename6);
-#ifdef DEBUG
-    cout << "New Output Generated." << endl;
-#endif // DEBUG
-                //Inform the client that the location has been processed.
-                bzero(buffer, sizeof(buffer));
-                buffer[0] = 'K';
-                while ((sl.link = write(sl.links[i], buffer,
-                                        sizeof(buffer))) < 1);
-                sl.link = 0;
-            }
-        }
-
-        if ((sl.links[sd.users] = accept(sl.sockFD,
-                                        (struct sockaddr *)&sl.clientAddr,
-                                        &sl.len)) > 0)
-        {
-#ifdef DEBUG
-    cout << "New User Accepted." << endl;
-#endif // DEBUG
-            //Wait to hear from the client that they have sent their location.
-            bzero(buffer, sizeof(buffer));
-            while (buffer[0] != 'X')
-            {
-                bzero(buffer, sizeof(buffer));
-                while ((sl.link = read(sl.links[sd.users],
-                                       buffer, sizeof(buffer))) < 1);
-                sl.link = 0;
-            }
-
-            Ctxt input(*sd.publicKey);
-
-            fs.open(&filename4[0], fstream::in);
-            fs >> input;
-            fs.close();
-#ifdef DEBUG
-    cout << "New Co-ords recieved." << endl;
-#endif // DEBUG
-
-            them = handle_new_user(them, &primary,
-                                   input, filename5, filename6);
-
-            //Inform the client that the location has been processed.
-            bzero(buffer, sizeof(buffer));
-            buffer[0] = 'K';
-            while ((sl.link = write(sl.links[sd.users - 1],
-                                    buffer, sizeof(buffer))) < 1);
-            sl.link = 0;
-
-            sl.links.push_back(0);
-        }
-    }
 
     while (true)
     {
         /**
         Handle new connections if there is space.
         **/
-        if (sd->users < maxthreads)
+        if (sd.users < maxthreads)
         {
             sl.len = sizeof(sl.clientAddr);
             ClientLink client;
+            pthread_t id;
+            sd.threadID.push_back(id);
             client.server = &sd;
             if ((client.link.sockFD = accept(sl.sockFD,
                                         (struct sockaddr *)&sl.clientAddr,
@@ -153,11 +67,10 @@ int main(int argc, char * argv[])
 #ifdef DEBUG
                 cout << "New Client Accepted" << endl;
 #endif // DEBUG
-                pthread_create(&client.threadID,
+                pthread_create(&sd.threadID[sd.users],
                                NULL,
                                handle_client,
                                (void*)&client);
-
             }
             else
             {
@@ -166,10 +79,15 @@ int main(int argc, char * argv[])
         }
         else
         {
-            //Do something here...
+            cout << "FUCK OFF WE'RE FULL" << endl;
         }
-
     }
+    for (int i = 0; i < sd.users; i++)
+    {
+        pthread_join(sd.threadID[i], NULL);
+    }
+
+    pthread_mutex_destroy(&sd.mutex);
     return 0;
 }
 
@@ -430,7 +348,7 @@ vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, strin
 
     //Generate an output using for the connected client.
     fs.open(&outname[0], fstream::out | fstream::trunc);
-    Ctxt out = generate_output(locs, newusr, sd, pk);
+    Ctxt out = generate_output(newusr, sd, pk);
     fs << out;
     fs.close();
 
@@ -448,7 +366,7 @@ vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, strin
  *Returns the updated vector of co-ords as an output
  *and sends the distances to the client via socket.
  *********************/
-void handle_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl)
+void handle_user_socket(ServerData * sd, ServerLink * sl)
 {
     stringstream stream;
     char * buffer = new char[4096];
@@ -467,6 +385,24 @@ void handle_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl)
 
     /**
     Send ACK when key has been acquired.
+    **/
+    if (!send_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
+
+    Ctxt newusr(pk);
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
+        stream << buffer;
+        stream >> newusr;
+    }
+
+    /**
+    Send ACK when the ciphertext is acquired.
     **/
     if (!send_ack(sl))
     {
@@ -552,40 +488,58 @@ vector<Ctxt> handle_new_user(ServerData * sd,
  *Or simply send add them to the vector if they are the first
  *client to join.
  *******************************/
-void handle_new_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl)
+void handle_new_user_socket(ServerData * sd, ServerLink * sl)
 {
+    stringstream stream;
+    char * buffer = new char[4096];
+    int blk = sizeof(buffer);
+
+    /**
+    Create temporary copy of client's public key,
+    then import key data from socket.
+    **/
+    FHEPubKey pk(*sd->context);
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
+        stream << buffer;
+        stream >> pk;
+    }
+
+    /**
+    Send ACK when key has been acquired.
+    **/
+    if (!send_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
+
+    Ctxt newusr(pk);
+    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    {
+        stream << buffer;
+        stream >> newusr;
+    }
+
+    /**
+    Send ACK when the ciphertext is acquired.
+    **/
+    if (!send_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
+
     /**
     If this client is not the first,
     process their location.
     **/
     if (sd->users > 0)
     {
-        stringstream stream;
-        char * buffer = new char[4096];
-        int blk = sizeof(buffer);
-
-        /**
-        Create temporary copy of client's public key,
-        then import key data from socket.
-        **/
-        FHEPubKey pk(*sd->context);
-        while ((stream_from_socket(&buffer, blk, sl)) > 0)
-        {
-            stream << buffer;
-            stream >> pk;
-        }
-
-        /**
-        Send ACK when key has been acquired.
-        **/
-        if (!send_ack(sl))
-        {
-#ifdef DEBUG
-            cout << "Socket buffer error." << endl;
-            exit(0);
-#endif
-        }
-
         /**
         Generate output ciphertext
         **/
@@ -613,10 +567,9 @@ void handle_new_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl)
             exit(0);
 #endif
         }
-
-        delete [] buffer;
     }
 
+    delete [] buffer;
     sd->positions.push_back(newusr);
     sl->thisclient = sd->users;
     sd->users++;
@@ -729,9 +682,43 @@ bool recv_ack(ServerLink * sl)
 
 /*****************************
  *Multithreading handler for the client
- *connection.
+ *connection. Uses the mutex in the shared
+ *ServerData struct to make sure no
+ *data corruption occurs.
  *****************************/
 void *handle_client(void *param)
 {
     ClientLink * me = (ClientLink*) param;
+
+    /**
+    This is blocking apparently.
+    Send the FHE details to the client
+    via socket.
+    **/
+    pthread_mutex_lock(&me->server->mutex);
+
+    generate_upkg_android(me->server, &me->link);
+
+    pthread_mutex_unlock(&me->server->mutex);
+
+    /**
+    Primary loop to process client positions.
+    **/
+    while(true)
+    {
+        pthread_mutex_lock(&me->server->mutex);
+        if (me->server->users < 1)
+        {
+            handle_new_user_socket(me->server, &me->link);
+
+        }
+        else
+        {
+            handle_user_socket(me->server, &me->link);
+        }
+        /**
+        Be a dude and share the mutex
+        **/
+        pthread_mutex_unlock(&me->server->mutex);
+    }
 }

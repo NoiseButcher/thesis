@@ -40,6 +40,8 @@ struct ServerData {
 	long nslots;
 	int users;
 	vector<Ctxt> positions;
+	vector<pthread_t> threadID;
+	pthread_mutex_t mutex;
 };
 
 struct ServerLink {
@@ -56,7 +58,6 @@ struct ServerLink {
 struct ClientLink {
     pthread_mutex_t mutex;
     ServerLink link;
-    pthread_t threadID;
     ServerData * server;
 };
 
@@ -88,6 +89,6 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl);
 bool send_ack(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
-void handle_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl);
-void handle_new_user_socket(ServerData * sd, Ctxt newusr, ServerLink * sl);
+void handle_user_socket(ServerData * sd, ServerLink * sl);
+void handle_new_user_socket(ServerData * sd, ServerLink * sl);
 #endif
