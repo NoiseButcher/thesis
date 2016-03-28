@@ -52,7 +52,7 @@ int main(int argc, char * argv[])
     string f4 = "Prx.Loc";
     string f5 = "Prx.Dis";
     string f6 = "Cli.PubKey";
-
+#endif
     /**
     Check input arguments.
     This only requires server information
@@ -78,22 +78,13 @@ int main(int argc, char * argv[])
     cout << "Connection Established." << endl;
 #endif // DEBUG
 
-    buffer[0] = 'P';
-    buffer[1] = 'C';
-    if (write_to_socket(&buffer, sizeof(buffer), &op))
-    {
-        if (!recv_ack(&op))
-        {
-            cout << "No ACK received." << endl;
-            exit(0);
-        }
 #ifdef PC
-        install_upkg(&me, f1, f2, f3);
-#elif SOCKETMODE
-        install_upkg_socket(&op, &me);
+    install_upkg_socket(&op, &me);
+#elif ANDROID
+    install_upkg_android(&me);
 #endif
 
-     if (!send_ack(&op))
+    if (!send_ack(&op))
     {
 #ifdef DEBUG
         cout << "Socket buffer error." << endl;
@@ -105,16 +96,10 @@ int main(int argc, char * argv[])
     cout << "FHE Scheme installed." << endl;
 #endif // DEBUG
 
-    }
-#elif ANDROID
-    cout << "AD" << endl;
-
-#endif // PC or Android start mode.
-
 #ifdef PC
-    while (send_location(&me, f4, f6) == 1)
-#elif SOCKETMODE
     while (send_location_socket(&me, &op) == 1)
+#elif SOCKETMODE
+    while (send_location_android(&me) == 1)
 #endif // SOCKETMODE
     {
         if (!recv_ack(&op))
@@ -427,7 +412,8 @@ bool recv_ack(ServerLink * sl)
  *Android ACK check
  *for standard in.
  ****************/
-bool recv_ack_android() {
+bool recv_ack_android()
+{
     string ack;
     cin >> ack;
     if (ack == "ACK") {
