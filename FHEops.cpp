@@ -172,21 +172,36 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 {
     fstream keyFile;
     stringstream stream;
-    char * buffer = new char[4096];
-    int blk = sizeof(buffer);
+    char * buffer = new char[1025];
+    int blk = 1024*sizeof(char);
     string filename = "Prox.Base";
+    int len;
+    bzero(buffer, sizeof(buffer));
 
+    /**
+    Open the ContextBase as binary data,
+    stream via socket in blocks of 1024 bytes,
+    or 128 characters.
+    **/
     keyFile.open(&filename[0], fstream::in);
-    stream << keyFile.rdbuf();
+    keyFile.seekg(0, keyFile.end);
+    len = keyFile.tellg();
+    len = len*sizeof(char);
     keyFile.close();
 
-    stream.read(buffer, 4096);
+    keyFile.open(&filename[0], fstream::in);
 
-    while (stream)
-    {
-        write_to_socket(&buffer, blk, sl);
-        stream.read(buffer, 4096);
-    }
+#ifdef DEBUG
+        cout << "Streaming base file..." << endl;
+#endif
+
+    keyFile.read(buffer, len);
+    write_to_socket(&buffer, len, sl);
+    keyFile.close();
+
+#ifdef DEBUG
+        cout << "Base File streaming complete." << endl;
+#endif
 
     if (!recv_ack(sl))
     {
@@ -197,15 +212,32 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     }
 
     bzero(buffer, sizeof(buffer));
+
     stream << *sd->context;
-
-    stream.read(buffer, 4096);
-
-    while (stream)
+#ifdef DEBUG
+        cout << "Streaming Context...";
+#endif
+    do
     {
-        write_to_socket(&buffer, blk, sl);
-        stream.read(buffer, 4096);
+#ifdef DEBUG
+        cout << "\b \b";
+        cout << "\b \b";
+        cout << "\b \b";
+#endif
+        stream.read(buffer, 128);
+#ifdef DEBUG
+        cout << ".";
+        cout << ".";
+        cout << ".";
+#endif
+        write_to_socket(&buffer, 1024, sl);
     }
+    while (stream.gcount() == 128);
+
+#ifdef DEBUG
+    cout << endl;
+    cout << "Context Stream Complete." << endl;
+#endif
 
     if (!recv_ack(sl))
     {
@@ -216,15 +248,15 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     }
 
     bzero(buffer, sizeof(buffer));
+
     stream << *sd->publicKey;
 
-    stream.read(buffer, 4096);
-
-    while (stream)
+    do
     {
-        write_to_socket(&buffer, blk, sl);
-        stream.read(buffer, 4096);
+        stream.read(buffer, 128);
+        write_to_socket(&buffer, 1024, sl);
     }
+    while (stream.gcount() == 128);
 
     if (!recv_ack(sl))
     {
@@ -335,7 +367,8 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
  *return an output to them, then rebuild
  *the co-ordinate vector.
  *********************************/
-vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd, Ctxt newusr, string outname, string keyfile)
+vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd,
+                         Ctxt newusr, string outname, string keyfile)
 {
 
     fstream fs;
@@ -617,7 +650,7 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
     bzero(*buffer, sizeof(*buffer));
-    sl->xfer = read(sl->sockFD, buffer, blocksize);
+    sl->xfer = read(sl->sockFD, *buffer, blocksize);
     p = sl->xfer;
     return p;
 
@@ -632,7 +665,10 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
-    sl->xfer = write(sl->sockFD, buffer, blocksize);
+    sl->xfer = write(sl->sockFD, *buffer, blocksize);
+#ifdef DEBUG
+    cout << *buffer << endl;
+#endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;
@@ -674,6 +710,9 @@ bool recv_ack(ServerLink * sl)
             delete [] buffer;
             delete [] ack;
         }
+#ifdef DEBUG
+        cout << "STUCK IN RECV_ACK()" << endl;
+#endif
     }
     delete [] buffer;
     delete [] ack;

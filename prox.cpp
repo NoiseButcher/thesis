@@ -205,24 +205,45 @@ void install_upkg(UserPackage * upk, string basefile,
  *Android installation package.
  *Downloads the context file from a socket, then
  *installs it.
- *Afterwards streams the
  *****************************/
 void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 {
     stringstream ss;
-    char * buffer = new char[4096];
-    int blk = 4096*sizeof(char);
+    fstream fs;
+    string filey = "Cli.Base";
 
-    //Read the context base from the socket, then
-    //push it into a stream to be used with readContextBase()
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
-    {
-        ss << buffer;
-    }
+    char * buffer = new char[256];
+    int blk = 1024*sizeof(char);
 
-    readContextBase(ss, upk->m, upk->p, upk->r, upk->gens, upk->ords);
+#ifdef DEBUG
+        cout << "Creating the file." << endl;
+#endif
+
+    fs.open(&filey[0], fstream::out | fstream::trunc);
+
+#ifdef DEBUG
+    cout << "Streaming from server..." << endl;
+#endif
+
+    stream_from_socket(&buffer, 1024, sl);
+    fs.write(buffer, sl->xfer);
+    fs.close();
+
+#ifdef DEBUG
+    cout << "Base File streaming complete." << endl;
+#endif
+
+    fs.open(&filey[0], fstream::in);
+
+    readContextBase(fs, upk->m, upk->p, upk->r, upk->gens, upk->ords);
     upk->context = new FHEcontext(upk->m, upk->p, upk->r,
                                   upk->gens, upk->ords);
+
+    fs.close();
+
+#ifdef DEBUG
+        cout << "Context built." << endl;
+#endif
 
     if (!send_ack(sl))
     {
@@ -233,7 +254,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     }
 
     //Stream the context information into the context structure.
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    while ((stream_from_socket(&buffer, 1024, sl)) > 0)
     {
         ss << buffer;
         ss >> *upk->context;
@@ -256,7 +277,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     }
 
     //Stream the server's public key from the socket.
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    while ((stream_from_socket(&buffer, 1024, sl)) > 0)
     {
         ss << buffer;
         ss >> *upk->serverKey;
@@ -342,7 +363,11 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
     bzero(*buffer, sizeof(*buffer));
-    sl->xfer = read(sl->sockFD, buffer, blocksize);
+    sl->xfer = read(sl->sockFD, *buffer, blocksize);
+#ifdef DEBUG
+    cout << *buffer << endl;
+    cout << sl->xfer << endl;
+#endif
     p = sl->xfer;
     return p;
 }
@@ -356,7 +381,7 @@ been lost.
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
-    sl->xfer = write(sl->sockFD, buffer, blocksize);
+    sl->xfer = write(sl->sockFD, *buffer, blocksize);
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;
@@ -388,7 +413,7 @@ bool send_ack(ServerLink * sl)
  ******************************/
 bool recv_ack(ServerLink * sl)
 {
-    char * buffer = new char[3];
+    char * buffer = new char[4];
     char * ack = new char[3];
     ack[0] = 'A';
     ack[1] = 'C';

@@ -1,6 +1,8 @@
 #ifndef FHEOPS_H
 #define FHEOPS_H
 
+#define SOCK_LIMIT  128
+
 #include <unistd.h>
 #include <NTL/lzz_pXFactoring.h>
 #include "FHE.h"
