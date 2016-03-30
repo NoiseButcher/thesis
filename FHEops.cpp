@@ -174,7 +174,7 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     stringstream stream;
 
     char * buffer = new char[1025];
-    int blk = 1024/sizeof(char);
+    int blk = 1024;
 
     string filename = "Prox.Base";
     int len;
@@ -220,18 +220,19 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 #endif
 
     bzero(buffer, sizeof(buffer));
-    stream.read(buffer, blk);
 
-    while (stream.gcount() == blk)
+    do
     {
-        write_to_socket(&buffer, 1024, sl);
         stream.read(buffer, blk);
+        write_to_socket(&buffer, 1024, sl);
     }
+    while (stream.gcount() == blk);
 
 #ifdef DEBUG
     cout << "Context Stream Complete." << endl;
 #endif
 
+    send_ack(sl);
     if (!recv_ack(sl))
     {
 #ifdef DEBUG
@@ -242,23 +243,26 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     stream << *sd->publicKey;
 
+    cout << stream.str() << endl;
+
 #ifdef DEBUG
     cout << "Streaming public Key..." << endl;
 #endif
 
     bzero(buffer, sizeof(buffer));
-    stream.read(buffer, 128);
 
-    while (stream.gcount() == 128)
+    do
     {
+        stream.read(buffer, blk);
         write_to_socket(&buffer, 1024, sl);
-        stream.read(buffer, 128);
     }
+    while (stream.gcount() == blk);
 
 #ifdef DEBUG
     cout << "Public Key streaming complete." << endl;
 #endif
 
+    send_ack(sl);
     if (!recv_ack(sl))
     {
 #ifdef DEBUG
@@ -717,9 +721,9 @@ bool recv_ack(ServerLink * sl)
     {
         if (strcmp(ack, buffer) == 0)
         {
-            return true;
             delete [] buffer;
             delete [] ack;
+            return true;
         }
     }
     delete [] buffer;

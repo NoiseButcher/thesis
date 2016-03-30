@@ -213,7 +213,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     string filey = "Cli.Base";
 
     char * buffer = new char[1025];
-    int blk = 1024/sizeof(char);
+    int blk = 1024;
 
     fs.open(&filey[0], fstream::out | fstream::trunc);
 
@@ -222,7 +222,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
 
     stream_from_socket(&buffer, 1024, sl);
-    fs.write(buffer, sl->xfer/sizeof(char));
+    fs.write(buffer, sl->xfer);
     fs.close();
 
 #ifdef DEBUG
@@ -256,10 +256,13 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     /**
     Stream in the context in blocks of 1KB.
     **/
-    while (stream_from_socket(&buffer, 1024, sl) == 1024)
+    stream_from_socket(&buffer, 1024, sl);
+
+    do
     {
-        ss.write(buffer, sl->xfer/sizeof(char));
+        ss.write(buffer, sl->xfer);
     }
+    while (stream_from_socket(&buffer, 1024, sl) == 1024);
 
     ss >> *upk->context;
 
@@ -294,10 +297,13 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     /**
     Get the server's public key from the socket
     **/
-    while (stream_from_socket(&buffer, 1024, sl) == 1024)
+    stream_from_socket(&buffer, 1024, sl);
+
+    do
     {
         ss.write(buffer, sl->xfer);
     }
+    while (stream_from_socket(&buffer, 1024, sl) == 1024);
 
     ss >> *upk->serverKey;
 
