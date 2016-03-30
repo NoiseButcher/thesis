@@ -172,8 +172,10 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 {
     fstream keyFile;
     stringstream stream;
+
     char * buffer = new char[1025];
-    int blk = 1024*sizeof(char);
+    int blk = 1024/sizeof(char);
+
     string filename = "Prox.Base";
     int len;
     bzero(buffer, sizeof(buffer));
@@ -211,31 +213,22 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 #endif
     }
 
-    bzero(buffer, sizeof(buffer));
-
     stream << *sd->context;
-#ifdef DEBUG
-        cout << "Streaming Context...";
-#endif
-    do
-    {
-#ifdef DEBUG
-        cout << "\b \b";
-        cout << "\b \b";
-        cout << "\b \b";
-#endif
-        stream.read(buffer, 128);
-#ifdef DEBUG
-        cout << ".";
-        cout << ".";
-        cout << ".";
-#endif
-        write_to_socket(&buffer, 1024, sl);
-    }
-    while (stream.gcount() == 128);
 
 #ifdef DEBUG
-    cout << endl;
+        cout << "Streaming Context..." << endl;;
+#endif
+
+    bzero(buffer, sizeof(buffer));
+    stream.read(buffer, blk);
+
+    while (stream.gcount() == blk)
+    {
+        write_to_socket(&buffer, 1024, sl);
+        stream.read(buffer, blk);
+    }
+
+#ifdef DEBUG
     cout << "Context Stream Complete." << endl;
 #endif
 
@@ -247,16 +240,24 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 #endif
     }
 
-    bzero(buffer, sizeof(buffer));
-
     stream << *sd->publicKey;
 
-    do
+#ifdef DEBUG
+    cout << "Streaming public Key..." << endl;
+#endif
+
+    bzero(buffer, sizeof(buffer));
+    stream.read(buffer, 128);
+
+    while (stream.gcount() == 128)
     {
-        stream.read(buffer, 128);
         write_to_socket(&buffer, 1024, sl);
+        stream.read(buffer, 128);
     }
-    while (stream.gcount() == 128);
+
+#ifdef DEBUG
+    cout << "Public Key streaming complete." << endl;
+#endif
 
     if (!recv_ack(sl))
     {
@@ -651,6 +652,9 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     int p;
     bzero(*buffer, sizeof(*buffer));
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
+#ifdef DEBUG
+        cout << "Buffer contents:" << *buffer << endl;
+#endif
     p = sl->xfer;
     return p;
 
@@ -667,7 +671,7 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
     int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
 #ifdef DEBUG
-    cout << *buffer << endl;
+        cout << "Buffer contents:" << *buffer << endl;
 #endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
@@ -680,10 +684,12 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
  *******************************/
 bool send_ack(ServerLink * sl)
 {
-    char * buffer = new char[3];
+    char * buffer = new char[4];
+    bzero(buffer, sizeof(buffer));
     buffer[0] = 'A';
     buffer[1] = 'C';
     buffer[2] = 'K';
+    buffer[3] = '\0';
     if (write_to_socket(&buffer, sizeof(buffer), sl) == sizeof(buffer)) {
         delete [] buffer;
         return true;
@@ -698,21 +704,23 @@ bool send_ack(ServerLink * sl)
  ******************************/
 bool recv_ack(ServerLink * sl)
 {
-    char * buffer = new char[3];
-    char * ack = new char[3];
+    char * buffer = new char[4];
+    char * ack = new char[4];
+    bzero(buffer, sizeof(buffer));
+    bzero(ack, sizeof(ack));
     ack[0] = 'A';
     ack[1] = 'C';
     ack[2] = 'K';
+    ack[3] = '\0';
     int blk = sizeof(ack);
-    while (stream_from_socket(&buffer, sizeof(buffer), sl) == blk) {
-        if (strcmp(ack, buffer) == 0) {
+    if (stream_from_socket(&buffer, sizeof(buffer), sl) == blk)
+    {
+        if (strcmp(ack, buffer) == 0)
+        {
             return true;
             delete [] buffer;
             delete [] ack;
         }
-#ifdef DEBUG
-        cout << "STUCK IN RECV_ACK()" << endl;
-#endif
     }
     delete [] buffer;
     delete [] ack;

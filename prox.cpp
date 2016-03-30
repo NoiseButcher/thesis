@@ -212,21 +212,17 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     fstream fs;
     string filey = "Cli.Base";
 
-    char * buffer = new char[256];
-    int blk = 1024*sizeof(char);
-
-#ifdef DEBUG
-        cout << "Creating the file." << endl;
-#endif
+    char * buffer = new char[1025];
+    int blk = 1024/sizeof(char);
 
     fs.open(&filey[0], fstream::out | fstream::trunc);
 
 #ifdef DEBUG
-    cout << "Streaming from server..." << endl;
+    cout << "Streaming base from server..." << endl;
 #endif
 
     stream_from_socket(&buffer, 1024, sl);
-    fs.write(buffer, sl->xfer);
+    fs.write(buffer, sl->xfer/sizeof(char));
     fs.close();
 
 #ifdef DEBUG
@@ -242,7 +238,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     fs.close();
 
 #ifdef DEBUG
-        cout << "Context built." << endl;
+        cout << "Context Initialised." << endl;
 #endif
 
     if (!send_ack(sl))
@@ -253,12 +249,23 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
     }
 
-    //Stream the context information into the context structure.
-    while ((stream_from_socket(&buffer, 1024, sl)) > 0)
+#ifdef DEBUG
+    cout << "Streaming context from server..." << endl;
+#endif
+
+    /**
+    Stream in the context in blocks of 1KB.
+    **/
+    while (stream_from_socket(&buffer, 1024, sl) == 1024)
     {
-        ss << buffer;
-        ss >> *upk->context;
+        ss.write(buffer, sl->xfer/sizeof(char));
     }
+
+    ss >> *upk->context;
+
+#ifdef DEBUG
+        cout << "Context Built." << endl;
+#endif
 
     //Generate my key pair and switching matrix.
     upk->secretKey = new FHESecKey(*upk->context);
@@ -268,6 +275,10 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     addSome1DMatrices(*upk->secretKey);
     upk->serverKey = new FHEPubKey(*upk->context);
 
+#ifdef DEBUG
+    cout << "Local Keys Generated." << endl;
+#endif
+
     if (!send_ack(sl))
     {
 #ifdef DEBUG
@@ -276,15 +287,26 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
     }
 
-    //Stream the server's public key from the socket.
-    while ((stream_from_socket(&buffer, 1024, sl)) > 0)
+#ifdef DEBUG
+    cout << "Streaming Server Key..." << endl;
+#endif
+
+    /**
+    Get the server's public key from the socket
+    **/
+    while (stream_from_socket(&buffer, 1024, sl) == 1024)
     {
-        ss << buffer;
-        ss >> *upk->serverKey;
+        ss.write(buffer, sl->xfer);
     }
+
+    ss >> *upk->serverKey;
 
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
+
+#ifdef DEBUG
+        cout << "Server Key Obtained. Init Complete." << endl;
+#endif
 
     if (!send_ack(sl))
     {
@@ -365,8 +387,7 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     bzero(*buffer, sizeof(*buffer));
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
 #ifdef DEBUG
-    cout << *buffer << endl;
-    cout << sl->xfer << endl;
+        cout << "Buffer contents:" << *buffer << endl;
 #endif
     p = sl->xfer;
     return p;
@@ -382,6 +403,9 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
+#ifdef DEBUG
+        cout << "Buffer contents:" << *buffer << endl;
+#endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;
@@ -393,10 +417,12 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
  *******************************/
 bool send_ack(ServerLink * sl)
 {
-    char * buffer = new char[3];
+    char * buffer = new char[4];
+    bzero(buffer, sizeof(buffer));
     buffer[0] = 'A';
     buffer[1] = 'C';
     buffer[2] = 'K';
+    buffer[3] = '\0';
     if (write_to_socket(&buffer,
                         sizeof(buffer), sl) == sizeof(buffer))
     {
@@ -414,12 +440,15 @@ bool send_ack(ServerLink * sl)
 bool recv_ack(ServerLink * sl)
 {
     char * buffer = new char[4];
-    char * ack = new char[3];
+    char * ack = new char[4];
+    bzero(buffer, sizeof(buffer));
+    bzero(ack, sizeof(ack));
     ack[0] = 'A';
     ack[1] = 'C';
     ack[2] = 'K';
+    ack[3] = '\0';
     int blk = sizeof(ack);
-    while (stream_from_socket(&buffer, sizeof(buffer), sl) == blk)
+    if (stream_from_socket(&buffer, sizeof(buffer), sl) == blk)
     {
         if (strcmp(ack, buffer) == 0)
         {
