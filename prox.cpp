@@ -257,13 +257,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     Stream in the context in blocks of 1KB.
     **/
     stream_from_socket(&buffer, 1024, sl);
-
-    do
-    {
-        ss.write(buffer, sl->xfer);
-    }
-    while (stream_from_socket(&buffer, 1024, sl) == 1024);
-
+    ss.write(buffer, sl->xfer);
     ss >> *upk->context;
 
 #ifdef DEBUG
@@ -276,6 +270,10 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     upk->G = upk->context->alMod.getFactorsOverZZ()[0];
     upk->secretKey->GenSecKey(64);
     addSome1DMatrices(*upk->secretKey);
+
+    upk->ea = new EncryptedArray(*upk->context, upk->G);
+    upk->nslots = upk->ea->size();
+
     upk->serverKey = new FHEPubKey(*upk->context);
 
 #ifdef DEBUG
@@ -297,6 +295,9 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     /**
     Get the server's public key from the socket
     **/
+    ss.str("");
+    ss.clear();
+
     stream_from_socket(&buffer, 1024, sl);
 
     do
@@ -306,9 +307,6 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     while (stream_from_socket(&buffer, 1024, sl) == 1024);
 
     ss >> *upk->serverKey;
-
-    upk->ea = new EncryptedArray(*upk->context, upk->G);
-    upk->nslots = upk->ea->size();
 
 #ifdef DEBUG
         cout << "Server Key Obtained. Init Complete." << endl;

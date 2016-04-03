@@ -232,7 +232,6 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     cout << "Context Stream Complete." << endl;
 #endif
 
-    send_ack(sl);
     if (!recv_ack(sl))
     {
 #ifdef DEBUG
@@ -241,9 +240,10 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 #endif
     }
 
-    stream << *sd->publicKey;
+    stream.str("");
+    stream.clear();
 
-    cout << stream.str() << endl;
+    stream << *sd->publicKey;
 
 #ifdef DEBUG
     cout << "Streaming public Key..." << endl;
