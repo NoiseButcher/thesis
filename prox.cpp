@@ -215,6 +215,10 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     char * buffer = new char[1025];
     int blk = 1024;
 
+    /**
+    Stream in the context base to a local file. Where it
+    can be stored for rejoining if need be.
+    **/
     fs.open(&filey[0], fstream::out | fstream::trunc);
 
 #ifdef DEBUG
@@ -288,25 +292,44 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
     }
 
-#ifdef DEBUG
     cout << "Streaming Server Key..." << endl;
-#endif
 
     /**
     Get the server's public key from the socket
     **/
+    bzero(buffer, sizeof(buffer));
+
+    /**
+    Empty stream buffer and reset flags.
+    **/
     ss.str("");
     ss.clear();
 
-    stream_from_socket(&buffer, 1024, sl);
-
     do
     {
-        ss.write(buffer, sl->xfer);
+        stream_from_socket(&buffer, 1024, sl);
+        ss.write(buffer, 1024);
+        //ss.seekg(sl->xfer);
     }
-    while (stream_from_socket(&buffer, 1024, sl) == 1024);
+    while (sl->xfer == 1024);
 
-    ss >> *upk->serverKey;
+#ifdef DEBUG
+    //Debug file write to test the public key stream.
+    fs.open("Client.pk", fstream::out | fstream::trunc);
+    fs << ss.rdbuf();
+    fs.close();
+    cout << "Client debug file written" << endl;
+
+    fs.open("Client.pk", fstream::in);
+    fs >> *upk->serverKey;
+    fs.close();
+#endif // DEBUG
+
+    //ss >> *upk->serverKey;
+    //stream_from_socket(&buffer, 1024, sl);
+    //ss.write(buffer, sl->xfer);
+
+
 
 #ifdef DEBUG
         cout << "Server Key Obtained. Init Complete." << endl;
@@ -391,7 +414,7 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     bzero(*buffer, sizeof(*buffer));
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
 #ifdef DEBUG
-        cout << "Buffer contents:" << *buffer << endl;
+        //cout << "Buffer contents:" << *buffer << endl;
 #endif
     p = sl->xfer;
     return p;
@@ -408,7 +431,7 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
     int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
 #ifdef DEBUG
-        cout << "Buffer contents:" << *buffer << endl;
+        //cout << "Buffer contents:" << *buffer << endl;
 #endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));

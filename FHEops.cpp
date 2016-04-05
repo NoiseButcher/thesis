@@ -181,9 +181,8 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     bzero(buffer, sizeof(buffer));
 
     /**
-    Open the ContextBase as binary data,
-    stream via socket in blocks of 1024 bytes,
-    or 128 characters.
+    Open the ContextBase file, and
+    stream it's contents over the socket.
     **/
     keyFile.open(&filename[0], fstream::in);
     keyFile.seekg(0, keyFile.end);
@@ -223,10 +222,10 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     do
     {
-        stream.read(buffer, blk);
+        stream.read(buffer, 1024);
         write_to_socket(&buffer, 1024, sl);
     }
-    while (stream.gcount() == blk);
+    while (stream.gcount() == 1024);
 
 #ifdef DEBUG
     cout << "Context Stream Complete." << endl;
@@ -240,29 +239,49 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 #endif
     }
 
+#ifdef DEBUG
+    //Debug file write to test the public key stream.
+    keyFile.open("Server.pk", fstream::out | fstream::trunc);
+    keyFile << *sd->publicKey;
+    keyFile.close();
+    cout << "Server debug file written" << endl;
+#endif // DEBUG
+
+    bzero(buffer, sizeof(buffer));
     stream.str("");
     stream.clear();
 
+    cout << "Buffers zeroed" << endl;
+
+    /**
+    Push the contents of the public key into
+    the stream
+    **/
     stream << *sd->publicKey;
 
-#ifdef DEBUG
     cout << "Streaming public Key..." << endl;
-#endif
 
-    bzero(buffer, sizeof(buffer));
-
-    do
+    /**
+    Stream 1024 characters (bytes) at a time.
+    Exit streaming when the stream throws up
+    error flags.
+    **/
+    //do
+    while (stream)
     {
-        stream.read(buffer, blk);
+        stream.read(buffer, 1024);
         write_to_socket(&buffer, 1024, sl);
     }
-    while (stream.gcount() == blk);
+    //while (stream.gcount() == 1024);
+
+    send_ack(sl);
+    //stream.read(buffer, blk);
+    //write_to_socket(&buffer, 1024, sl);
 
 #ifdef DEBUG
     cout << "Public Key streaming complete." << endl;
 #endif
 
-    send_ack(sl);
     if (!recv_ack(sl))
     {
 #ifdef DEBUG
@@ -657,7 +676,7 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     bzero(*buffer, sizeof(*buffer));
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
 #ifdef DEBUG
-        cout << "Buffer contents:" << *buffer << endl;
+        //cout << "Buffer contents:" << *buffer << endl;
 #endif
     p = sl->xfer;
     return p;
@@ -675,7 +694,7 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
     int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
 #ifdef DEBUG
-        cout << "Buffer contents:" << *buffer << endl;
+        //cout << "Buffer contents:" << *buffer << endl;
 #endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
