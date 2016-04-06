@@ -261,22 +261,28 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     cout << "Streaming public Key..." << endl;
 
+    int buffcity = 0;
+    int counter = 0;
+    int k = 0;
     /**
     Stream 1024 characters (bytes) at a time.
     Exit streaming when the stream throws up
     error flags.
     **/
-    //do
-    while (stream)
-    {
-        stream.read(buffer, 1024);
-        write_to_socket(&buffer, 1024, sl);
-    }
-    //while (stream.gcount() == 1024);
 
-    send_ack(sl);
-    //stream.read(buffer, blk);
-    //write_to_socket(&buffer, 1024, sl);
+    do
+    {
+        k = 0;
+        stream.read(buffer, 1024);
+        k = stream.gcount();
+        write_to_socket(&buffer, k, sl);
+
+        buffcity += k;
+        counter ++;
+    }
+    while (k == 1024);
+
+    cout << counter << " : " << buffcity << endl;
 
 #ifdef DEBUG
     cout << "Public Key streaming complete." << endl;

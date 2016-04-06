@@ -297,39 +297,42 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     /**
     Get the server's public key from the socket
     **/
-    bzero(buffer, sizeof(buffer));
+    int buffcity = 0;
+    int counter = 0;
 
     /**
     Empty stream buffer and reset flags.
     **/
+    bzero(buffer, sizeof(buffer));
     ss.str("");
     ss.clear();
 
     do
     {
+        sl->xfer = 0;
         stream_from_socket(&buffer, 1024, sl);
-        ss.write(buffer, 1024);
-        //ss.seekg(sl->xfer);
+        ss.write(buffer, sl->xfer);
+
+        buffcity += sl->xfer;
+        counter ++;
     }
     while (sl->xfer == 1024);
+
+    cout << counter << " : " << buffcity << endl;
+
+#ifdef DEBUG
+    cout << "Public Key streaming complete." << endl;
+#endif
 
 #ifdef DEBUG
     //Debug file write to test the public key stream.
     fs.open("Client.pk", fstream::out | fstream::trunc);
-    fs << ss.rdbuf();
+    fs << *upk->publicKey;
     fs.close();
     cout << "Client debug file written" << endl;
-
-    fs.open("Client.pk", fstream::in);
-    fs >> *upk->serverKey;
-    fs.close();
 #endif // DEBUG
 
-    //ss >> *upk->serverKey;
-    //stream_from_socket(&buffer, 1024, sl);
-    //ss.write(buffer, sl->xfer);
-
-
+    ss >> *upk->serverKey;
 
 #ifdef DEBUG
         cout << "Server Key Obtained. Init Complete." << endl;
