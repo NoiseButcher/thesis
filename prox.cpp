@@ -307,11 +307,13 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     ss.str("");
     ss.clear();
 
+    fs.open("Client.pk", fstream::out | fstream::trunc);
+
     do
     {
         sl->xfer = 0;
         stream_from_socket(&buffer, 1024, sl);
-        ss.write(buffer, sl->xfer);
+        fs.write(buffer, sl->xfer);
 
         buffcity += sl->xfer;
         counter ++;
@@ -320,19 +322,15 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 
     cout << counter << " : " << buffcity << endl;
 
+    fs.close();
+
 #ifdef DEBUG
     cout << "Public Key streaming complete." << endl;
 #endif
 
-#ifdef DEBUG
-    //Debug file write to test the public key stream.
-    fs.open("Client.pk", fstream::out | fstream::trunc);
-    fs << *upk->publicKey;
+    fs.open("Client.pk", fstream::in);
+    fs >> *upk->serverKey;
     fs.close();
-    cout << "Client debug file written" << endl;
-#endif // DEBUG
-
-    ss >> *upk->serverKey;
 
 #ifdef DEBUG
         cout << "Server Key Obtained. Init Complete." << endl;
