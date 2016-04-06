@@ -239,14 +239,6 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 #endif
     }
 
-#ifdef DEBUG
-    //Debug file write to test the public key stream.
-    keyFile.open("Server.pk", fstream::out | fstream::trunc);
-    keyFile << *sd->publicKey;
-    keyFile.close();
-    cout << "Server debug file written" << endl;
-#endif // DEBUG
-
     bzero(buffer, sizeof(buffer));
     stream.str("");
     stream.clear();
@@ -432,19 +424,24 @@ vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd,
 void handle_user_socket(ServerData * sd, ServerLink * sl)
 {
     stringstream stream;
-    char * buffer = new char[4096];
-    int blk = sizeof(buffer);
+    char * buffer = new char[1025];
+    bzero(buffer, sizeof(buffer));
+    int k = 0;
 
     /**
     Create temporary copy of client's public key,
     then import key data from socket.
     **/
     FHEPubKey pk(*sd->context);
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+
+    do
     {
-        stream << buffer;
-        stream >> pk;
+        stream_from_socket(&buffer, 1024, sl);
+        stream.write(buffer, sl->xfer);
     }
+    while (sl->xfer == 1024);
+
+    stream >> pk;
 
     /**
     Send ACK when key has been acquired.
@@ -458,11 +455,19 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     }
 
     Ctxt newusr(pk);
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+
+    stream.str("");
+    stream.clear();
+    bzero(buffer, sizeof(buffer));
+
+    do
     {
-        stream << buffer;
-        stream >> newusr;
+        stream_from_socket(&buffer, 1024, sl);
+        stream.write(buffer, sl->xfer);
     }
+    while (sl->xfer == 1024);
+
+    stream >> newusr;
 
     /**
     Send ACK when the ciphertext is acquired.
@@ -483,14 +488,20 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     /**
     Push to socket.
     **/
-    stream << out;
-    stream.read(buffer, 4096);
+    stream.str("");
+    stream.clear();
+    bzero(buffer, sizeof(buffer));
 
-    while(stream)
+    stream << out;
+
+    do
     {
-        write_to_socket(&buffer, blk, sl);
-        stream.read(buffer, 4096);
+        k = 0;
+        stream.read(buffer, 1024);
+        k = stream.gcount();
+        write_to_socket(&buffer, k, sl);
     }
+    while (k == 1024);
 
     /**
     Wait for ACK.
@@ -554,20 +565,27 @@ vector<Ctxt> handle_new_user(ServerData * sd,
 void handle_new_user_socket(ServerData * sd, ServerLink * sl)
 {
     stringstream stream;
-    char * buffer = new char[4096];
-    int blk = sizeof(buffer);
-
+    char * buffer = new char[1025];
+    bzero(buffer, sizeof(buffer));
+    int k = 0;
     /**
     Create temporary copy of client's public key,
     then import key data from socket.
     **/
     FHEPubKey pk(*sd->context);
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
-    {
-        stream << buffer;
-        stream >> pk;
-    }
 
+#ifdef DEBUG
+    cout << "Getting the first position." << endl;
+#endif // DEBUG
+
+    do
+    {
+        stream_from_socket(&buffer, 1024, sl);
+        stream.write(buffer, sl->xfer);
+    }
+    while (sl->xfer == 1024);
+
+    stream >> pk;
     /**
     Send ACK when key has been acquired.
     **/
@@ -580,11 +598,19 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
     }
 
     Ctxt newusr(pk);
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+
+    stream.str("");
+    stream.clear();
+    bzero(buffer, sizeof(buffer));
+
+    do
     {
-        stream << buffer;
-        stream >> newusr;
+        stream_from_socket(&buffer, 1024, sl);
+        stream.write(buffer, sl->xfer);
     }
+    while (sl->xfer == 1024);
+
+    stream >> newusr;
 
     /**
     Send ACK when the ciphertext is acquired.
@@ -611,14 +637,20 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
         /**
         Push to socket.
         **/
-        stream << out;
-        stream.read(buffer, 4096);
+        stream.str("");
+        stream.clear();
+        bzero(buffer, sizeof(buffer));
 
-        while(stream)
+        stream << out;
+
+        do
         {
-            write_to_socket(&buffer, blk, sl);
-            stream.read(buffer, 4096);
+            k = 0;
+            stream.read(buffer, 1024);
+            k = stream.gcount();
+            write_to_socket(&buffer, k, sl);
         }
+        while (k == 1024);
 
         /**
         Wait for ACK.
@@ -681,9 +713,6 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     int p;
     bzero(*buffer, sizeof(*buffer));
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
-#ifdef DEBUG
-        //cout << "Buffer contents:" << *buffer << endl;
-#endif
     p = sl->xfer;
     return p;
 
@@ -699,9 +728,6 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
-#ifdef DEBUG
-        //cout << "Buffer contents:" << *buffer << endl;
-#endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;

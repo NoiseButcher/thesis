@@ -84,60 +84,29 @@ int main(int argc, char * argv[])
     install_upkg_android(&me);
 #endif
 
-    if (!send_ack(&op))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
-
 #ifdef DEBUG
     cout << "FHE Scheme installed." << endl;
 #endif // DEBUG
 
 #ifdef PC
     while (send_location_socket(&me, &op) == 1)
-#elif SOCKETMODE
-    while (send_location_android(&me) == 1)
-#endif // SOCKETMODE
     {
-        if (!recv_ack(&op))
-        {
-            cout << "No ACK received." << endl;
-            exit(0);
-        }
 
 #ifdef DEBUG
     cout << "Location Sent." << endl;
 #endif // DEBUG
 
-#ifdef PC
-        //Wait for the server to reply with confirmation that
-        //the location has been processed.
-        while(buffer[0] != 'K')
-        {
-            bzero(buffer, sizeof(buffer));
-            while ((op.xfer = read(op.sockFD,
-                                   buffer,
-                                   sizeof(buffer))) < 1);
-            op.xfer = 0;
-        }
+        them = get_distances_socket(&op, &me);
 
-        //Panic button for first user. The file will not exist.
-        if ((stat(&f5[0], &checkFile) == 0) == true)
-        {
-
-            them = get_distances(f5, &me);
 #ifdef DEBUG
     cout << "Distances Received." << endl;
 #endif // DEBUG
 
-            display_positions(them, 10);
+        display_positions(them, 10);
+
 #ifdef DEBUG
     cout << "Distances Decoded." << endl;
 #endif // DEBUG
-        }
 
 #elif ANDROID
     while (send_location_android(&me) == 1)
@@ -145,7 +114,6 @@ int main(int argc, char * argv[])
         them = get_distances_android(&me);
         display_positions(them, 10);
 #endif // ANDROID
-
     }
 
     return 0;
@@ -414,9 +382,6 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
     int p;
     bzero(*buffer, sizeof(*buffer));
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
-#ifdef DEBUG
-        //cout << "Buffer contents:" << *buffer << endl;
-#endif
     p = sl->xfer;
     return p;
 }
@@ -431,9 +396,6 @@ int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
     int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
-#ifdef DEBUG
-        //cout << "Buffer contents:" << *buffer << endl;
-#endif
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;
@@ -590,22 +552,23 @@ int send_location(UserPackage * upk, string outfile, string keyfile)
 int send_location_socket(UserPackage * upk, ServerLink * sl)
 {
     stringstream stream;
-    char * buffer = new char[4096];
-    int blk = sizeof(buffer);
+    char * buffer = new char[1025];
+    bzero(buffer, sizeof(buffer));
+    int k = 0;
 
     pair<int, int> me = get_gps_x();
     Ctxt output = encrypt_location_x(me.first, me.second, upk);
 
-    stream << output;
-    stream.read(buffer, 4096);
+    stream << *upk->publicKey;
 
-    while (stream)
+    do
     {
-        write_to_socket(&buffer, blk, sl);
-        stream.read(buffer, 4096);
+        k = 0;
+        stream.read(buffer, 1024);
+        k = stream.gcount();
+        write_to_socket(&buffer, k, sl);
     }
-
-    bzero(buffer, sizeof(buffer));
+    while (k == 1024);
 
     if (!recv_ack(sl))
     {
@@ -615,16 +578,20 @@ int send_location_socket(UserPackage * upk, ServerLink * sl)
 #endif
     }
 
-    stream << *upk->publicKey;
-    stream.read(buffer, 4096);
-
-    while (stream)
-    {
-        write_to_socket(&buffer, blk, sl);
-        stream.read(buffer, 4096);
-    }
-
+    stream.str("");
+    stream.clear();
     bzero(buffer, sizeof(buffer));
+
+    stream << output;
+
+    do
+    {
+        k = 0;
+        stream.read(buffer, 1024);
+        k = stream.gcount();
+        write_to_socket(&buffer, k, sl);
+    }
+    while (k == 1024);
 
     if (!recv_ack(sl))
     {
@@ -692,14 +659,16 @@ vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk)
     vector<long> d;
     Ctxt encrypted_distances(*upk->publicKey);
     stringstream stream;
-    char * buffer = new char[4096];
-    int blk = 4096*sizeof(char);
+    char * buffer = new char[1025];
 
-    while ((stream_from_socket(&buffer, blk, sl)) > 0)
+    do
     {
-        stream << buffer;
-        stream >> encrypted_distances;
+        stream_from_socket(&buffer, 1024, sl);
+        stream.write(buffer, sl->xfer);
     }
+    while (sl->xfer == 1024);
+
+    stream >> encrypted_distances;
 
     if (!send_ack(sl))
     {
