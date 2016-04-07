@@ -224,6 +224,9 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     cout << "Context Stream Complete." << endl;
 
+    stream.str("");
+    stream.clear();
+
     if (!recv_ack(sl))
     {
 #ifdef DEBUG
@@ -234,9 +237,6 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
 
     cout << "Streaming public Key..." << endl;
 
-    stream.str("");
-    stream.clear();
-
     /**
     Push the contents of the public key into
     the stream,
@@ -245,6 +245,7 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     been read.
     **/
     stream << *sd->publicKey;
+    stream.clear();
     stream_to_socket(stream, &buffer, sl, 1024);
 
     cout << "Public Key streaming complete." << endl;
@@ -256,6 +257,8 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
         exit(0);
 #endif
     }
+
+    cout << "Ready to do stuff" << endl;
 
     delete [] buffer;
 }
@@ -406,25 +409,30 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
  *********************/
 void handle_user_socket(ServerData * sd, ServerLink * sl)
 {
+    fstream fs;
     stringstream stream;
     char * buffer = new char[1025];
-    bzero(buffer, sizeof(buffer));
-    int k = 0;
 
     /**
     Create temporary copy of client's public key,
     then import key data from socket.
     **/
+    cout << "Getting the client's public key." << endl;
+
     FHEPubKey pk(*sd->context);
-
-    do
-    {
-        stream_from_socket(&buffer, 1024, sl);
-        stream.write(buffer, sl->xfer);
-    }
-    while (sl->xfer == 1024);
-
+/*
+    socket_to_stream(stream, &buffer, sl, 1024);
     stream >> pk;
+*/
+    fs.open("PubKey.srv", fstream::out | fstream::trunc);
+    socket_to_stream(fs, &buffer, sl, 1024);
+    fs.close();
+
+    fs.open("PubKey.srv", fstream::in);
+    fs >> pk;
+    fs.close();
+
+    cout << "Public Key obtained." << endl;
 
     /**
     Send ACK when key has been acquired.
@@ -437,20 +445,16 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
 #endif
     }
 
-    Ctxt newusr(pk);
+    cout << "Acquiring Encrypted Position" << endl;
+
+    Ctxt newusr(*sd->publicKey);
+    socket_to_stream(stream, &buffer, sl, 1024);
+    stream >> newusr;
+
+    cout << "Encrypted Location obtained" << endl;
 
     stream.str("");
     stream.clear();
-    bzero(buffer, sizeof(buffer));
-
-    do
-    {
-        stream_from_socket(&buffer, 1024, sl);
-        stream.write(buffer, sl->xfer);
-    }
-    while (sl->xfer == 1024);
-
-    stream >> newusr;
 
     /**
     Send ACK when the ciphertext is acquired.
@@ -471,20 +475,9 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     /**
     Push to socket.
     **/
-    stream.str("");
-    stream.clear();
-    bzero(buffer, sizeof(buffer));
-
     stream << out;
-
-    do
-    {
-        k = 0;
-        stream.read(buffer, 1024);
-        k = stream.gcount();
-        write_to_socket(&buffer, k, sl);
-    }
-    while (k == 1024);
+    stream.clear();
+    stream_to_socket(stream, &buffer, sl, 1024);;
 
     /**
     Wait for ACK.
@@ -515,21 +508,32 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
  *******************************/
 void handle_new_user_socket(ServerData * sd, ServerLink * sl)
 {
+    fstream fs;
     stringstream stream;
     char * buffer = new char[1025];
-    bzero(buffer, sizeof(buffer));
-    int k = 0;
+
     /**
     Create temporary copy of client's public key,
     then import key data from socket.
     **/
 
-
     cout << "Getting the client's public key." << endl;
 
     FHEPubKey pk(*sd->context);
+
+    fs.open("PubKey.srv", fstream::out | fstream::trunc);
+    socket_to_stream(fs, &buffer, sl, 1024);
+    fs.close();
+
+    fs.open("PubKey.srv", fstream::in);
+    fs >> pk;
+    fs.close();
+/*
     socket_to_stream(stream, &buffer, sl, 1024);
     stream >> pk;
+    stream.str("");
+    stream.clear();
+*/
 
     cout << "Public Key obtained." << endl;
 
@@ -546,24 +550,14 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
 
     cout << "Acquiring Encrypted Position" << endl;
 
-    stream.str("");
-    stream.clear();
-
     Ctxt newusr(*sd->publicKey);
     socket_to_stream(stream, &buffer, sl, 1024);
     stream >> newusr;
-/*
-    do
-    {
-        stream_from_socket(&buffer, 1024, sl);
-        stream.write(buffer, sl->xfer);
-    }
-    while (sl->xfer == 1024);
-
-    stream >> newusr;
-*/
 
     cout << "Encrypted Location obtained" << endl;
+
+    stream.str("");
+    stream.clear();
 
     /**
     Send ACK when the ciphertext is acquired.
@@ -586,25 +580,14 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
         /**
         Generate output ciphertext, push to socket.
         **/
-        stream.str("");
-        stream.clear();
 
         Ctxt out = generate_output(newusr, sd, pk);
 
         stream << out;
         stream_to_socket(stream, &buffer, sl, 1024);
-/*
-        bzero(buffer, sizeof(buffer));
-        do
-        {
-            k = 0;
-            stream.read(buffer, 1024);
-            k = stream.gcount();
-            write_to_socket(&buffer, k, sl);
-        }
-        while (k == 1024);
-*/
+
         cout << "Output sent" << endl;
+
         /**
         Wait for ACK.
         **/
@@ -827,7 +810,13 @@ void stream_to_socket(istream &stream, char ** buffer,
 #endif // DEBUG
     }
     while (k == blocksize);
-
+/*
+    if (k == 0) {
+        bzero(*buffer, sizeof(*buffer));
+        *buffer[0] = '\n';
+        write_to_socket(buffer, 1, sl);
+    }
+*/
 #ifdef DEBUG
         cout << totalloops << " : " << tx << endl;
 #endif // DEBUG
@@ -862,7 +851,9 @@ void socket_to_stream(ostream &stream, char ** buffer,
     }
     while (k == blocksize);
 
+    stream.clear();
+
 #ifdef DEBUG
-        cout << totalloops << " : " << rx << endl;
+        cout << totalloops << " : " << rx << " : " << stream.tellp() << endl;
 #endif // DEBUG
 }

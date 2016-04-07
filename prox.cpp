@@ -33,13 +33,10 @@ int main(int argc, char * argv[])
     UserPackage me;
     vector<long> them;
     struct stat checkFile;
-    char * buffer = new char[4096];
 
     /**
     Sanity-check buffer & transfer volume zeroing
     **/
-    bzero(buffer, sizeof(buffer));
-    op.xfer = 0;
 
 #ifdef PC
     /**
@@ -178,8 +175,6 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 {
     stringstream ss;
     fstream fs;
-    string filey = "Cli.Base";
-
     char * buffer = new char[1025];
 
 #ifdef DEBUG
@@ -190,21 +185,27 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     Stream in the context base to a local file. Where it
     can be stored for rejoining if need be.
     **/
+/*
+    string filey = "Cli.Base";
     fs.open(&filey[0], fstream::out | fstream::trunc);
     socket_to_stream(fs, &buffer, sl, 1024);
     fs.close();
+
+    fs.open(&filey[0], fstream::in);
+    readContextBase(fs, upk->m, upk->p, upk->r, upk->gens, upk->ords);
+    fs.close();
+ */
+    socket_to_stream(ss, &buffer, sl, 1024);
+    readContextBase(ss, upk->m, upk->p, upk->r, upk->gens, upk->ords);
+    ss.str("");
+    ss.clear();
 
 #ifdef DEBUG
     cout << "Base File streaming complete." << endl;
 #endif
 
-    fs.open(&filey[0], fstream::in);
-
-    readContextBase(fs, upk->m, upk->p, upk->r, upk->gens, upk->ords);
     upk->context = new FHEcontext(upk->m, upk->p, upk->r,
                                   upk->gens, upk->ords);
-
-    fs.close();
 
 #ifdef DEBUG
         cout << "Context Initialised." << endl;
@@ -227,6 +228,8 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     **/
     socket_to_stream(ss, &buffer, sl, 1024);
     ss >> *upk->context;
+    ss.str("");
+    ss.clear();
 
 #ifdef DEBUG
         cout << "Context Built." << endl;
@@ -262,25 +265,16 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     Get the server's public key from the socket
     Empty stream buffer and reset flags.
     **/
-    ss.str("");
-    ss.clear();
-
-    fs.open("Client.pk", fstream::out | fstream::trunc);
-
+    fs.open("PubKey.cli", fstream::out | fstream::trunc);
     socket_to_stream(fs, &buffer, sl, 1024);
-
     fs.close();
 
-#ifdef DEBUG
-    cout << "Public Key streaming complete." << endl;
-#endif
-
-    fs.open("Client.pk", fstream::in);
+    fs.open("PubKey.cli", fstream::in);
     fs >> *upk->serverKey;
     fs.close();
 
 #ifdef DEBUG
-        cout << "Server Key Obtained. Init Complete." << endl;
+    cout << "Public Key streaming complete." << endl;
 #endif
 
     if (!send_ack(sl))
@@ -290,6 +284,10 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
         exit(0);
 #endif
     }
+
+#ifdef DEBUG
+    cout << "Server Key Obtained. Init Complete." << endl;
+#endif
 
     delete [] buffer;
 }
@@ -530,19 +528,29 @@ int send_location(UserPackage * upk, string outfile, string keyfile)
  *************************************/
 int send_location_socket(UserPackage * upk, ServerLink * sl)
 {
+    fstream fs;
     stringstream stream;
     char * buffer = new char[1025];
-
-    pair<int, int> me = get_gps_x();
-    Ctxt output = encrypt_location_x(me.first, me.second, upk);
 
 #ifdef DEBUG
     cout << "Sending my public key." << endl;
 #endif // DEBUG
 
+    fs.open("DEARGOD.dat", fstream::out | fstream:: trunc);
+    fs << *upk->publicKey;
+    fs.close();
+
+    fs.open("DEARGOD.dat", fstream::in);
+    stream_to_socket(fs, &buffer, sl, 1024);
+    fs.close();
+/*
     stream << *upk->publicKey;
+    stream.clear();
     stream_to_socket(stream, &buffer, sl, 1024);
 
+    stream.str("");
+    stream.clear();
+*/
 #ifdef DEBUG
     cout << "Public Key transferred." << endl;
 #endif // DEBUG
@@ -559,10 +567,11 @@ int send_location_socket(UserPackage * upk, ServerLink * sl)
     cout << "Sending my encrypted position." << endl;
 #endif // DEBUG
 
-    stream.str("");
-    stream.clear();
+    pair<int, int> me = get_gps_x();
+    Ctxt output = encrypt_location_x(me.first, me.second, upk);
 
     stream << output;
+    stream.clear();
     stream_to_socket(stream, &buffer, sl, 1024);
 
 #ifdef DEBUG
@@ -774,7 +783,13 @@ void stream_to_socket(istream &stream, char ** buffer,
 #endif // DEBUG
     }
     while (k == blocksize);
-
+/*
+    if (k == 0) {
+        bzero(*buffer, sizeof(*buffer));
+        *buffer[0] = '\n';
+        write_to_socket(buffer, 1, sl);
+    }
+*/
 #ifdef DEBUG
         cout << totalloops << " : " << tx << endl;
 #endif // DEBUG
@@ -809,7 +824,9 @@ void socket_to_stream(ostream &stream, char ** buffer,
     }
     while (k == blocksize);
 
+    stream.clear();
+
 #ifdef DEBUG
-        cout << totalloops << " : " << rx << endl;
+        cout << totalloops << " : " << rx << " : " << stream.tellp() << endl;
 #endif // DEBUG
 }
