@@ -420,10 +420,7 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     cout << "Getting the client's public key." << endl;
 
     FHEPubKey pk(*sd->context);
-/*
-    socket_to_stream(stream, &buffer, sl, 1024);
-    stream >> pk;
-*/
+
     fs.open("PubKey.srv", fstream::out | fstream::trunc);
     socket_to_stream(fs, &buffer, sl, 1024);
     fs.close();
@@ -432,6 +429,12 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     fs >> pk;
     fs.close();
 
+/*
+    socket_to_stream(stream, &buffer, sl, 1024);
+    stream >> pk;
+    stream.str("");
+    stream.clear();
+*/
     cout << "Public Key obtained." << endl;
 
     /**
