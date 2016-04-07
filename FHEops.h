@@ -62,7 +62,7 @@ struct ClientLink {
 };
 
 /**
-UNIVERSAL FUNCTIONS
+GENERIC FUNCTIONS
 FHE OPERATION FUNCTIONS
 **/
 int generate_scheme(ServerData * sd);
@@ -91,4 +91,8 @@ bool send_ack(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
 void handle_user_socket(ServerData * sd, ServerLink * sl);
 void handle_new_user_socket(ServerData * sd, ServerLink * sl);
+void stream_to_socket(istream &stream, char ** buffer,
+                      ServerLink * sl, int blocksize);
+void socket_to_stream(ostream &stream, char ** buffer,
+                      ServerLink * sl, int blocksize);
 #endif

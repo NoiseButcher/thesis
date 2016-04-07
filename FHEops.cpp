@@ -2,6 +2,8 @@
 #include <sys/resource.h>
 
 #define DEBUG
+//#define FILEMODE
+#define SOCKETMODE
 /***********************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
@@ -11,6 +13,7 @@ ServerData sd;
 
 int main(int argc, char * argv[])
 {
+#ifdef FILEMODE
     /**
     File-mode variables
     **/
@@ -18,15 +21,13 @@ int main(int argc, char * argv[])
     string filename4 = "Prx.Loc";
     string filename5 = "Prx.Dis";
     string filename6 = "Cli.PubKey";
-
+#endif
     /**
     Data structures and buffers
     **/
     ServerLink sl;
     int maxthreads;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
-    char * buffer = new char[4096];
-    int blk = sizeof(buffer);
 
     /**
     Argument check... just in case...
@@ -40,10 +41,13 @@ int main(int argc, char * argv[])
     maxthreads = atoi(argv[2]);
 
     prepare_server_socket(&sl, argv);
+
 #ifdef DEBUG
     cout << "Socket Prepped." << endl;
 #endif // DEBUG
+
     generate_scheme(&sd);
+
 #ifdef DEBUG
     cout << "FHE Scheme generated." << endl;
 #endif // DEBUG
@@ -55,6 +59,10 @@ int main(int argc, char * argv[])
         **/
         if (sd.users < maxthreads)
         {
+            /**
+            Generate all of the necessary data
+            structures to handle a new user.
+            **/
             sl.len = sizeof(sl.clientAddr);
             ClientLink client;
             pthread_t id;
@@ -64,9 +72,8 @@ int main(int argc, char * argv[])
                                         (struct sockaddr *)&sl.clientAddr,
                                         &sl.len)) > 0)
             {
-#ifdef DEBUG
                 cout << "New Client Accepted" << endl;
-#endif // DEBUG
+
                 pthread_create(&sd.threadID[sd.users],
                                NULL,
                                handle_client,
@@ -77,20 +84,30 @@ int main(int argc, char * argv[])
                 cout << "Error Accepting Client" << endl;
             }
         }
+        /**
+        Refuse connection if maximum users have been reached.
+        **/
         else
         {
             cout << "FUCK OFF WE'RE FULL" << endl;
         }
     }
+    /**
+    Wipe all of the thread data.
+    **/
     for (int i = 0; i < sd.users; i++)
     {
         pthread_join(sd.threadID[i], NULL);
     }
 
+    /**
+    Destroy thread mutex.
+    **/
     pthread_mutex_destroy(&sd.mutex);
     return 0;
 }
 
+/**********GENERIC FUNCTIONS*********************/
 /*******************************
  *Generate the FHE scheme with the specified
  *parameters. Writes the scheme to the ServerData
@@ -115,7 +132,8 @@ int generate_scheme(ServerData * sd) {
     buildModChain(*sd->context, L, c);
 
     /*******************
-     *This requires work
+     *This requires further investigation.
+     *Security Loophole.
      *******************/
     sd->secretKey = new FHESecKey(*sd->context);
     sd->publicKey = sd->secretKey;
@@ -123,7 +141,8 @@ int generate_scheme(ServerData * sd) {
     sd->secretKey->GenSecKey(w);
     addSome1DMatrices(*sd->secretKey);
     /*******************
-     *This requires work
+     *This requires further investigation.
+     *Security Loophole.
      *******************/
 
     sd->ea = new EncryptedArray(*sd->context, G);
@@ -134,16 +153,18 @@ int generate_scheme(ServerData * sd) {
     keyfile.open(&filename1[0], fstream::out | fstream::trunc);
     writeContextBase(keyfile, *sd->context);
     keyfile.close();
+
     cout << "ContextBase written to " << filename1 << endl;
 
-    cout << "Init Complete." << endl;
+    cout << "Scheme Generation Complete." << endl;
 
     return 1;
 }
 
 /**************************************
  *Generates files for the clients to use
- *so they can have access to the FHE scheme
+ *so they can have access to the FHE scheme.
+ *FILE mode version.
  **************************************/
 int generate_upkg(ServerData * sd)
 {
@@ -167,42 +188,26 @@ int generate_upkg(ServerData * sd)
 /**********************************
  *Stream the Context Base, Context and
  *Public Key to a connected client.
+ *Socket mode version.
  **********************************/
 void generate_upkg_android(ServerData * sd, ServerLink * sl)
 {
     fstream keyFile;
     stringstream stream;
-
     char * buffer = new char[1025];
-    int blk = 1024;
-
     string filename = "Prox.Base";
-    int len;
-    bzero(buffer, sizeof(buffer));
+
+    cout << "Streaming base file..." << endl;
 
     /**
     Open the ContextBase file, and
     stream it's contents over the socket.
     **/
     keyFile.open(&filename[0], fstream::in);
-    keyFile.seekg(0, keyFile.end);
-    len = keyFile.tellg();
-    len = len*sizeof(char);
+    stream_to_socket(keyFile, &buffer, sl, 1024);
     keyFile.close();
 
-    keyFile.open(&filename[0], fstream::in);
-
-#ifdef DEBUG
-        cout << "Streaming base file..." << endl;
-#endif
-
-    keyFile.read(buffer, len);
-    write_to_socket(&buffer, len, sl);
-    keyFile.close();
-
-#ifdef DEBUG
-        cout << "Base File streaming complete." << endl;
-#endif
+    cout << "Base File streaming complete." << endl;
 
     if (!recv_ack(sl))
     {
@@ -211,25 +216,13 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
         exit(0);
 #endif
     }
+
+    cout << "Streaming Context..." << endl;;
 
     stream << *sd->context;
+    stream_to_socket(stream, &buffer, sl, 1024);
 
-#ifdef DEBUG
-        cout << "Streaming Context..." << endl;;
-#endif
-
-    bzero(buffer, sizeof(buffer));
-
-    do
-    {
-        stream.read(buffer, 1024);
-        write_to_socket(&buffer, 1024, sl);
-    }
-    while (stream.gcount() == 1024);
-
-#ifdef DEBUG
     cout << "Context Stream Complete." << endl;
-#endif
 
     if (!recv_ack(sl))
     {
@@ -238,47 +231,23 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
         exit(0);
 #endif
     }
-
-    bzero(buffer, sizeof(buffer));
-    stream.str("");
-    stream.clear();
-
-    cout << "Buffers zeroed" << endl;
-
-    /**
-    Push the contents of the public key into
-    the stream
-    **/
-    stream << *sd->publicKey;
 
     cout << "Streaming public Key..." << endl;
 
-    int buffcity = 0;
-    int counter = 0;
-    int k = 0;
+    stream.str("");
+    stream.clear();
+
     /**
+    Push the contents of the public key into
+    the stream,
     Stream 1024 characters (bytes) at a time.
-    Exit streaming when the stream throws up
-    error flags.
+    Exit streaming when less than 1024 bytes have
+    been read.
     **/
+    stream << *sd->publicKey;
+    stream_to_socket(stream, &buffer, sl, 1024);
 
-    do
-    {
-        k = 0;
-        stream.read(buffer, 1024);
-        k = stream.gcount();
-        write_to_socket(&buffer, k, sl);
-
-        buffcity += k;
-        counter ++;
-    }
-    while (k == 1024);
-
-    cout << counter << " : " << buffcity << endl;
-
-#ifdef DEBUG
     cout << "Public Key streaming complete." << endl;
-#endif
 
     if (!recv_ack(sl))
     {
@@ -291,6 +260,50 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     delete [] buffer;
 }
 
+/*****************************
+ *Multithreading handler for the client
+ *connection. Uses the mutex in the shared
+ *ServerData struct to make sure no
+ *data corruption occurs.
+ *****************************/
+void *handle_client(void *param)
+{
+    ClientLink * me = (ClientLink*) param;
+
+    /**
+    This is blocking apparently.
+    Send the FHE details to the client
+    via socket.
+    **/
+    pthread_mutex_lock(&me->server->mutex);
+
+    generate_upkg_android(me->server, &me->link);
+
+    pthread_mutex_unlock(&me->server->mutex);
+
+    /**
+    Primary loop to process client positions.
+    **/
+    while(true)
+    {
+        pthread_mutex_lock(&me->server->mutex);
+        if (me->server->users < 1)
+        {
+            handle_new_user_socket(me->server, &me->link);
+
+        }
+        else
+        {
+            handle_user_socket(me->server, &me->link);
+        }
+        /**
+        Be a dude and share the mutex
+        **/
+        pthread_mutex_unlock(&me->server->mutex);
+    }
+}
+
+/*********FHE FUNCTIONS*******************/
 /****************************
  *When a new position comes in,
  *generate an output ciphertext that
@@ -382,36 +395,6 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 	c1+=inv; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. 0 (x1-x2)^2] **/
 	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
 	return c1;
-}
-
-/**********************************
- *Every time a user sends in co-ords,
- *return an output to them, then rebuild
- *the co-ordinate vector.
- *********************************/
-vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd,
-                         Ctxt newusr, string outname, string keyfile)
-{
-
-    fstream fs;
-
-    //Import the client's public key
-    fs.open(&keyfile[0], fstream::in);
-    FHEPubKey pk(*sd->context);
-    fs >> pk;
-    fs.close();
-
-    //Generate an output using for the connected client.
-    fs.open(&outname[0], fstream::out | fstream::trunc);
-    Ctxt out = generate_output(newusr, sd, pk);
-    fs << out;
-    fs.close();
-
-    vector<Ctxt> updated(locs.begin() + 1, locs.end());
-    updated.push_back(newusr);
-
-    return updated;
-
 }
 
 /**********************
@@ -523,6 +506,153 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     delete [] buffer;
 }
 
+/*******************************
+ *Handle a new user connecting to the server for the first time.
+ *Either process their location and send it, then append
+ *their position to the current vector,
+ *Or simply send add them to the vector if they are the first
+ *client to join.
+ *******************************/
+void handle_new_user_socket(ServerData * sd, ServerLink * sl)
+{
+    stringstream stream;
+    char * buffer = new char[1025];
+    bzero(buffer, sizeof(buffer));
+    int k = 0;
+    /**
+    Create temporary copy of client's public key,
+    then import key data from socket.
+    **/
+
+
+    cout << "Getting the client's public key." << endl;
+
+    FHEPubKey pk(*sd->context);
+    socket_to_stream(stream, &buffer, sl, 1024);
+    stream >> pk;
+
+    cout << "Public Key obtained." << endl;
+
+    /**
+    Send ACK when key has been acquired.
+    **/
+    if (!send_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
+
+    cout << "Acquiring Encrypted Position" << endl;
+
+    stream.str("");
+    stream.clear();
+
+    Ctxt newusr(*sd->publicKey);
+    socket_to_stream(stream, &buffer, sl, 1024);
+    stream >> newusr;
+/*
+    do
+    {
+        stream_from_socket(&buffer, 1024, sl);
+        stream.write(buffer, sl->xfer);
+    }
+    while (sl->xfer == 1024);
+
+    stream >> newusr;
+*/
+
+    cout << "Encrypted Location obtained" << endl;
+
+    /**
+    Send ACK when the ciphertext is acquired.
+    **/
+    if (!send_ack(sl))
+    {
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
+
+    /**
+    If this client is not the first,
+    process their location.
+    **/
+    if (sd->users > 0)
+    {
+        cout << "Generating output vector" << endl;
+        /**
+        Generate output ciphertext, push to socket.
+        **/
+        stream.str("");
+        stream.clear();
+
+        Ctxt out = generate_output(newusr, sd, pk);
+
+        stream << out;
+        stream_to_socket(stream, &buffer, sl, 1024);
+/*
+        bzero(buffer, sizeof(buffer));
+        do
+        {
+            k = 0;
+            stream.read(buffer, 1024);
+            k = stream.gcount();
+            write_to_socket(&buffer, k, sl);
+        }
+        while (k == 1024);
+*/
+        cout << "Output sent" << endl;
+        /**
+        Wait for ACK.
+        **/
+        if (!recv_ack(sl))
+        {
+#ifdef DEBUG
+            cout << "Socket buffer error, no ACK." << endl;
+            exit(0);
+#endif
+        }
+    }
+
+    delete [] buffer;
+    sd->positions.push_back(newusr);
+    sl->thisclient = sd->users;
+    sd->users++;
+}
+
+/**********************************
+ *Every time a user sends in co-ords,
+ *return an output to them, then rebuild
+ *the co-ordinate vector.
+ *********************************/
+vector<Ctxt> handle_user(vector<Ctxt>  locs, ServerData * sd,
+                         Ctxt newusr, string outname, string keyfile)
+{
+
+    fstream fs;
+
+    //Import the client's public key
+    fs.open(&keyfile[0], fstream::in);
+    FHEPubKey pk(*sd->context);
+    fs >> pk;
+    fs.close();
+
+    //Generate an output using for the connected client.
+    fs.open(&outname[0], fstream::out | fstream::trunc);
+    Ctxt out = generate_output(newusr, sd, pk);
+    fs << out;
+    fs.close();
+
+    vector<Ctxt> updated(locs.begin() + 1, locs.end());
+    updated.push_back(newusr);
+
+    return updated;
+
+}
+
 /**********************
  *Same as the standard handle_user()
  *except does not change the current
@@ -555,121 +685,7 @@ vector<Ctxt> handle_new_user(ServerData * sd,
     return updated;
 }
 
-/*******************************
- *Handle a new user connecting to the server for the first time.
- *Either process their location and send it, then append
- *their position to the current vector,
- *Or simply send add them to the vector if they are the first
- *client to join.
- *******************************/
-void handle_new_user_socket(ServerData * sd, ServerLink * sl)
-{
-    stringstream stream;
-    char * buffer = new char[1025];
-    bzero(buffer, sizeof(buffer));
-    int k = 0;
-    /**
-    Create temporary copy of client's public key,
-    then import key data from socket.
-    **/
-    FHEPubKey pk(*sd->context);
-
-#ifdef DEBUG
-    cout << "Getting the first position." << endl;
-#endif // DEBUG
-
-    do
-    {
-        stream_from_socket(&buffer, 1024, sl);
-        stream.write(buffer, sl->xfer);
-    }
-    while (sl->xfer == 1024);
-
-    stream >> pk;
-    /**
-    Send ACK when key has been acquired.
-    **/
-    if (!send_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
-
-    Ctxt newusr(pk);
-
-    stream.str("");
-    stream.clear();
-    bzero(buffer, sizeof(buffer));
-
-    do
-    {
-        stream_from_socket(&buffer, 1024, sl);
-        stream.write(buffer, sl->xfer);
-    }
-    while (sl->xfer == 1024);
-
-    stream >> newusr;
-
-    /**
-    Send ACK when the ciphertext is acquired.
-    **/
-    if (!send_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
-
-    /**
-    If this client is not the first,
-    process their location.
-    **/
-    if (sd->users > 0)
-    {
-        /**
-        Generate output ciphertext
-        **/
-        Ctxt out = generate_output(newusr, sd, pk);
-
-        /**
-        Push to socket.
-        **/
-        stream.str("");
-        stream.clear();
-        bzero(buffer, sizeof(buffer));
-
-        stream << out;
-
-        do
-        {
-            k = 0;
-            stream.read(buffer, 1024);
-            k = stream.gcount();
-            write_to_socket(&buffer, k, sl);
-        }
-        while (k == 1024);
-
-        /**
-        Wait for ACK.
-        **/
-        if (!recv_ack(sl))
-        {
-#ifdef DEBUG
-            cout << "Socket buffer error, no ACK." << endl;
-            exit(0);
-#endif
-        }
-    }
-
-    delete [] buffer;
-    sd->positions.push_back(newusr);
-    sl->thisclient = sd->users;
-    sd->users++;
-}
-
+/***************SOCKET FUNCTIONS**********************/
 /*****************************
  *Listen on a port provided in the
  *arguments.
@@ -782,45 +798,71 @@ bool recv_ack(ServerLink * sl)
     return false;
 }
 
-/*****************************
- *Multithreading handler for the client
- *connection. Uses the mutex in the shared
- *ServerData struct to make sure no
- *data corruption occurs.
- *****************************/
-void *handle_client(void *param)
+/****************************
+ *Function to allow data transfer from
+ *an input stream to a socket with
+ *consistent block size.
+ ****************************/
+void stream_to_socket(istream &stream, char ** buffer,
+                      ServerLink * sl, int blocksize)
 {
-    ClientLink * me = (ClientLink*) param;
+    bzero(*buffer, sizeof(*buffer));
+    int k;
 
-    /**
-    This is blocking apparently.
-    Send the FHE details to the client
-    via socket.
-    **/
-    pthread_mutex_lock(&me->server->mutex);
+#ifdef DEBUG
+    int tx, totalloops;
+    totalloops = 0;
+    tx = 0;
+#endif
 
-    generate_upkg_android(me->server, &me->link);
-
-    pthread_mutex_unlock(&me->server->mutex);
-
-    /**
-    Primary loop to process client positions.
-    **/
-    while(true)
+    do
     {
-        pthread_mutex_lock(&me->server->mutex);
-        if (me->server->users < 1)
-        {
-            handle_new_user_socket(me->server, &me->link);
-
-        }
-        else
-        {
-            handle_user_socket(me->server, &me->link);
-        }
-        /**
-        Be a dude and share the mutex
-        **/
-        pthread_mutex_unlock(&me->server->mutex);
+        k = 0;
+        stream.read(*buffer, blocksize);
+        k = stream.gcount();
+        write_to_socket(buffer, k, sl);
+#ifdef DEBUG
+        tx += k;
+        totalloops++;
+#endif // DEBUG
     }
+    while (k == blocksize);
+
+#ifdef DEBUG
+        cout << totalloops << " : " << tx << endl;
+#endif // DEBUG
+}
+
+/******************************
+ *Reads blocksize socket data from
+ *a TCP socket and writes it to the
+ *stream specified as the first argument.
+ ******************************/
+void socket_to_stream(ostream &stream, char ** buffer,
+                      ServerLink * sl, int blocksize)
+{
+    bzero(*buffer, sizeof(*buffer));
+    int k;
+
+#ifdef DEBUG
+    int rx, totalloops;
+    totalloops = 0;
+    rx = 0;
+#endif
+
+    do
+    {
+        k = 0;
+        k = stream_from_socket(buffer, blocksize, sl);
+        stream.write(*buffer, k);
+#ifdef DEBUG
+        rx += k;
+        totalloops++;
+#endif // DEBUG
+    }
+    while (k == blocksize);
+
+#ifdef DEBUG
+        cout << totalloops << " : " << rx << endl;
+#endif // DEBUG
 }

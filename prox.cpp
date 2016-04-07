@@ -181,20 +181,17 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     string filey = "Cli.Base";
 
     char * buffer = new char[1025];
-    int blk = 1024;
+
+#ifdef DEBUG
+    cout << "Streaming base from server..." << endl;
+#endif
 
     /**
     Stream in the context base to a local file. Where it
     can be stored for rejoining if need be.
     **/
     fs.open(&filey[0], fstream::out | fstream::trunc);
-
-#ifdef DEBUG
-    cout << "Streaming base from server..." << endl;
-#endif
-
-    stream_from_socket(&buffer, 1024, sl);
-    fs.write(buffer, sl->xfer);
+    socket_to_stream(fs, &buffer, sl, 1024);
     fs.close();
 
 #ifdef DEBUG
@@ -228,8 +225,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     /**
     Stream in the context in blocks of 1KB.
     **/
-    stream_from_socket(&buffer, 1024, sl);
-    ss.write(buffer, sl->xfer);
+    socket_to_stream(ss, &buffer, sl, 1024);
     ss >> *upk->context;
 
 #ifdef DEBUG
@@ -264,31 +260,14 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 
     /**
     Get the server's public key from the socket
-    **/
-    int buffcity = 0;
-    int counter = 0;
-
-    /**
     Empty stream buffer and reset flags.
     **/
-    bzero(buffer, sizeof(buffer));
     ss.str("");
     ss.clear();
 
     fs.open("Client.pk", fstream::out | fstream::trunc);
 
-    do
-    {
-        sl->xfer = 0;
-        stream_from_socket(&buffer, 1024, sl);
-        fs.write(buffer, sl->xfer);
-
-        buffcity += sl->xfer;
-        counter ++;
-    }
-    while (sl->xfer == 1024);
-
-    cout << counter << " : " << buffcity << endl;
+    socket_to_stream(fs, &buffer, sl, 1024);
 
     fs.close();
 
@@ -553,22 +532,20 @@ int send_location_socket(UserPackage * upk, ServerLink * sl)
 {
     stringstream stream;
     char * buffer = new char[1025];
-    bzero(buffer, sizeof(buffer));
-    int k = 0;
 
     pair<int, int> me = get_gps_x();
     Ctxt output = encrypt_location_x(me.first, me.second, upk);
 
-    stream << *upk->publicKey;
+#ifdef DEBUG
+    cout << "Sending my public key." << endl;
+#endif // DEBUG
 
-    do
-    {
-        k = 0;
-        stream.read(buffer, 1024);
-        k = stream.gcount();
-        write_to_socket(&buffer, k, sl);
-    }
-    while (k == 1024);
+    stream << *upk->publicKey;
+    stream_to_socket(stream, &buffer, sl, 1024);
+
+#ifdef DEBUG
+    cout << "Public Key transferred." << endl;
+#endif // DEBUG
 
     if (!recv_ack(sl))
     {
@@ -578,21 +555,19 @@ int send_location_socket(UserPackage * upk, ServerLink * sl)
 #endif
     }
 
+#ifdef DEBUG
+    cout << "Sending my encrypted position." << endl;
+#endif // DEBUG
+
     stream.str("");
     stream.clear();
-    bzero(buffer, sizeof(buffer));
 
     stream << output;
+    stream_to_socket(stream, &buffer, sl, 1024);
 
-    do
-    {
-        k = 0;
-        stream.read(buffer, 1024);
-        k = stream.gcount();
-        write_to_socket(&buffer, k, sl);
-    }
-    while (k == 1024);
-
+#ifdef DEBUG
+    cout << "Position transferred." << endl;
+#endif // DEBUG
     if (!recv_ack(sl))
     {
 #ifdef DEBUG
@@ -768,4 +743,73 @@ int prepare_socket(ServerLink * sl, char * argv[])
      }
 
      return 1;
+}
+
+/****************************
+ *Function to allow data transfer from
+ *an input stream to a socket with
+ *consistent block size.
+ ****************************/
+void stream_to_socket(istream &stream, char ** buffer,
+                      ServerLink * sl, int blocksize)
+{
+    bzero(*buffer, sizeof(*buffer));
+    int k;
+
+#ifdef DEBUG
+    int tx, totalloops;
+    totalloops = 0;
+    tx = 0;
+#endif
+
+    do
+    {
+        k = 0;
+        stream.read(*buffer, blocksize);
+        k = stream.gcount();
+        write_to_socket(buffer, k, sl);
+#ifdef DEBUG
+        tx += k;
+        totalloops++;
+#endif // DEBUG
+    }
+    while (k == blocksize);
+
+#ifdef DEBUG
+        cout << totalloops << " : " << tx << endl;
+#endif // DEBUG
+}
+
+/******************************
+ *Reads blocksize socket data from
+ *a TCP socket and writes it to the
+ *stream specified as the first argument.
+ ******************************/
+void socket_to_stream(ostream &stream, char ** buffer,
+                      ServerLink * sl, int blocksize)
+{
+    bzero(*buffer, sizeof(*buffer));
+    int k;
+
+#ifdef DEBUG
+    int rx, totalloops;
+    totalloops = 0;
+    rx = 0;
+#endif
+
+    do
+    {
+        k = 0;
+        k = stream_from_socket(buffer, blocksize, sl);
+        stream.write(*buffer, k);
+#ifdef DEBUG
+        rx += k;
+        totalloops++;
+#endif // DEBUG
+    }
+    while (k == blocksize);
+
+#ifdef DEBUG
+        cout << totalloops << " : " << rx << endl;
+#endif // DEBUG
 }
