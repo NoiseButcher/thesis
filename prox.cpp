@@ -93,23 +93,29 @@ int main(int argc, char * argv[])
     cout << "Location Sent." << endl;
 #endif // DEBUG
 
-        them = get_distances_socket(&op, &me);
+        if (recv_ack(&op))
+        {
+            them = get_distances_socket(&op, &me);
 
 #ifdef DEBUG
-    cout << "Distances Received." << endl;
+            cout << "Distances Received." << endl;
 #endif // DEBUG
 
-        display_positions(them, 10);
+            display_positions(them, 10);
 
 #ifdef DEBUG
-    cout << "Distances Decoded." << endl;
+            cout << "Distances Decoded." << endl;
 #endif // DEBUG
+        }
 
 #elif ANDROID
     while (send_location_android(&me) == 1)
     {
-        them = get_distances_android(&me);
-        display_positions(them, 10);
+        if (recv_ack_android())
+        {
+            them = get_distances_android(&me);
+            display_positions(them, 10);
+        }
 #endif // ANDROID
     }
 

@@ -39,15 +39,16 @@ struct ServerData {
 	EncryptedArray *ea;
 	long nslots;
 	int users;
+	int currentuser;
 	vector<Ctxt> positions;
 	vector<pthread_t> threadID;
 	pthread_mutex_t mutex;
+	pthread_cond_t myturn;
 };
 
 struct ServerLink {
     int sockFD;
     int port;
-    int thisclient;
     int blocklen;
     socklen_t len;
     struct sockaddr_in clientAddr;
@@ -56,7 +57,7 @@ struct ServerLink {
 };
 
 struct ClientLink {
-    pthread_mutex_t mutex;
+    int thisClient;
     ServerLink link;
     ServerData * server;
 };
@@ -88,8 +89,9 @@ int prepare_server_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl);
 bool send_ack(ServerLink * sl);
+bool send_nak(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
-void handle_user_socket(ServerData * sd, ServerLink * sl);
+void handle_user_socket(ServerData * sd, ServerLink * sl, int id);
 void handle_new_user_socket(ServerData * sd, ServerLink * sl);
 void stream_to_socket(istream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);

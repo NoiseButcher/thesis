@@ -28,6 +28,8 @@ int main(int argc, char * argv[])
     ServerLink sl;
     int maxthreads;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
+    sd.myturn = PTHREAD_COND_INITIALIZER;
+
 
     /**
     Argument check... just in case...
@@ -40,17 +42,20 @@ int main(int argc, char * argv[])
 
     maxthreads = atoi(argv[2]);
 
+    generate_scheme(&sd);
+
+#ifdef DEBUG
+    cout << "FHE Scheme generated." << endl;
+#endif // DEBUG
+
     prepare_server_socket(&sl, argv);
 
 #ifdef DEBUG
     cout << "Socket Prepped." << endl;
 #endif // DEBUG
 
-    generate_scheme(&sd);
-
-#ifdef DEBUG
-    cout << "FHE Scheme generated." << endl;
-#endif // DEBUG
+    sd.currentuser = 0;
+    sd.users = 0;
 
     while (true)
     {
@@ -67,17 +72,19 @@ int main(int argc, char * argv[])
             ClientLink client;
             pthread_t id;
             sd.threadID.push_back(id);
+
+            client.thisClient = sd.users;
             client.server = &sd;
+
             if ((client.link.sockFD = accept(sl.sockFD,
                                         (struct sockaddr *)&sl.clientAddr,
                                         &sl.len)) > 0)
             {
-                cout << "New Client Accepted" << endl;
-
                 pthread_create(&sd.threadID[sd.users],
                                NULL,
                                handle_client,
                                (void*)&client);
+                sd.users++;
             }
             else
             {
@@ -147,8 +154,6 @@ int generate_scheme(ServerData * sd) {
 
     sd->ea = new EncryptedArray(*sd->context, G);
     sd->nslots = sd->ea->size();
-
-    sd->users = 0;
 
     keyfile.open(&filename1[0], fstream::out | fstream::trunc);
     writeContextBase(keyfile, *sd->context);
@@ -273,12 +278,23 @@ void *handle_client(void *param)
 {
     ClientLink * me = (ClientLink*) param;
 
+    cout << "New Client " << me->thisClient << " Accepted" << endl;
+
     /**
     This is blocking apparently.
     Send the FHE details to the client
     via socket.
     **/
     pthread_mutex_lock(&me->server->mutex);
+
+    /**
+    If there is more than one user, wait to access the server
+    data.
+    **/
+    if (me->server->users > 1)
+    {
+        pthread_cond_wait(&me->server->myturn, &me->server->mutex);
+    }
 
     generate_upkg_android(me->server, &me->link);
 
@@ -290,19 +306,47 @@ void *handle_client(void *param)
     while(true)
     {
         pthread_mutex_lock(&me->server->mutex);
-        if (me->server->users < 1)
-        {
-            handle_new_user_socket(me->server, &me->link);
 
+        if (me->server->users > 1)
+        {
+            pthread_cond_wait(&me->server->myturn,
+                              &me->server->mutex);
         }
+
+        if (me->server->currentuser != me->thisClient)
+        {
+            pthread_cond_signal(&me->server->myturn);
+        }
+
         else
         {
-            handle_user_socket(me->server, &me->link);
+            if (me->server->users == me->thisClient)
+            {
+                handle_new_user_socket(me->server, &me->link);
+                send_nak(&me->link);
+                me->server->currentuser = 0;
+            }
+            else
+            {
+                handle_user_socket(me->server, &me->link,
+                                   me->thisClient);
+                send_ack(&me->link);
+
+                if (me->server->currentuser == me->server->users)
+                {
+                    me->server->currentuser = 0;
+                }
+                else
+                {
+                    me->server->currentuser++;
+                }
+            }
         }
+
+        pthread_mutex_unlock(&me->server->mutex);
         /**
         Be a dude and share the mutex
         **/
-        pthread_mutex_unlock(&me->server->mutex);
     }
 }
 
@@ -407,7 +451,7 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
  *Returns the updated vector of co-ords as an output
  *and sends the distances to the client via socket.
  *********************/
-void handle_user_socket(ServerData * sd, ServerLink * sl)
+void handle_user_socket(ServerData * sd, ServerLink * sl, int id)
 {
     fstream fs;
     stringstream stream;
@@ -497,7 +541,7 @@ void handle_user_socket(ServerData * sd, ServerLink * sl)
     Update co-ordinate vector, removing the old
     co-ords and appending the new ones.
     **/
-    sd->positions[sl->thisclient] = newusr;
+    sd->positions[id] = newusr;
 
     delete [] buffer;
 }
@@ -577,7 +621,7 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
     If this client is not the first,
     process their location.
     **/
-    if (sd->users > 0)
+    if (sd->users > 1)
     {
         cout << "Generating output vector" << endl;
         /**
@@ -605,8 +649,6 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
 
     delete [] buffer;
     sd->positions.push_back(newusr);
-    sl->thisclient = sd->users;
-    sd->users++;
 }
 
 /**********************************
@@ -745,6 +787,25 @@ bool send_ack(ServerLink * sl)
     bzero(buffer, sizeof(buffer));
     buffer[0] = 'A';
     buffer[1] = 'C';
+    buffer[2] = 'K';
+    buffer[3] = '\0';
+    if (write_to_socket(&buffer, sizeof(buffer), sl) == sizeof(buffer)) {
+        delete [] buffer;
+        return true;
+    }
+    delete [] buffer;
+    return false;
+}
+
+/**********
+ *Thing to handle first client
+ *********/
+bool send_nak(ServerLink * sl)
+{
+    char * buffer = new char[4];
+    bzero(buffer, sizeof(buffer));
+    buffer[0] = 'N';
+    buffer[1] = 'A';
     buffer[2] = 'K';
     buffer[3] = '\0';
     if (write_to_socket(&buffer, sizeof(buffer), sl) == sizeof(buffer)) {
