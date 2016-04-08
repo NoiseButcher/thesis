@@ -84,7 +84,6 @@ int main(int argc, char * argv[])
                                NULL,
                                handle_client,
                                (void*)&client);
-                sd.users++;
             }
             else
             {
@@ -278,8 +277,6 @@ void *handle_client(void *param)
 {
     ClientLink * me = (ClientLink*) param;
 
-    cout << "New Client " << me->thisClient << " Accepted" << endl;
-
     /**
     This is blocking apparently.
     Send the FHE details to the client
@@ -296,6 +293,10 @@ void *handle_client(void *param)
         pthread_cond_wait(&me->server->myturn, &me->server->mutex);
     }
 
+    cout << "New Client " << me->thisClient << " Accepted" << endl;
+
+    me->server->users++;
+
     generate_upkg_android(me->server, &me->link);
 
     pthread_mutex_unlock(&me->server->mutex);
@@ -307,12 +308,10 @@ void *handle_client(void *param)
     {
         pthread_mutex_lock(&me->server->mutex);
 
-        if (me->server->users > 1)
-        {
-            pthread_cond_wait(&me->server->myturn,
-                              &me->server->mutex);
-        }
-
+        /**
+        If you are not the current user, free the mutex
+        by sending the signal to the server.
+        **/
         if (me->server->currentuser != me->thisClient)
         {
             pthread_cond_signal(&me->server->myturn);
@@ -320,6 +319,19 @@ void *handle_client(void *param)
 
         else
         {
+            /**
+            If there is more than one user, wait until the mutex
+            is free/ release it until such time.
+            BLOCKING.
+            **/
+            if (me->server->users > 1)
+            {
+                pthread_cond_wait(&me->server->myturn,
+                                  &me->server->mutex);
+            }
+            /**
+            If I am the current user, handle my location request.
+            **/
             if (me->server->users == me->thisClient)
             {
                 handle_new_user_socket(me->server, &me->link);
@@ -564,7 +576,7 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
     then import key data from socket.
     **/
 
-    cout << "Getting the client's public key." << endl;
+    cout << "Getting the new client's public key." << endl;
 
     FHEPubKey pk(*sd->context);
 
