@@ -191,16 +191,6 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     Stream in the context base to a local file. Where it
     can be stored for rejoining if need be.
     **/
-/*
-    string filey = "Cli.Base";
-    fs.open(&filey[0], fstream::out | fstream::trunc);
-    socket_to_stream(fs, &buffer, sl, 1024);
-    fs.close();
-
-    fs.open(&filey[0], fstream::in);
-    readContextBase(fs, upk->m, upk->p, upk->r, upk->gens, upk->ords);
-    fs.close();
- */
     socket_to_stream(ss, &buffer, sl, 1024);
     readContextBase(ss, upk->m, upk->p, upk->r, upk->gens, upk->ords);
     ss.str("");

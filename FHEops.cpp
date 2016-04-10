@@ -30,7 +30,6 @@ int main(int argc, char * argv[])
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
     sd.myturn = PTHREAD_COND_INITIALIZER;
 
-
     /**
     Argument check... just in case...
     **/
@@ -54,7 +53,7 @@ int main(int argc, char * argv[])
     cout << "Socket Prepped." << endl;
 #endif // DEBUG
 
-    sd.currentuser = 0;
+    sd.currentuser = 1;
     sd.users = 0;
 
     while (true)
@@ -73,7 +72,6 @@ int main(int argc, char * argv[])
             pthread_t id;
             sd.threadID.push_back(id);
 
-            client.thisClient = sd.users;
             client.server = &sd;
 
             if ((client.link.sockFD = accept(sl.sockFD,
@@ -120,9 +118,9 @@ int main(int argc, char * argv[])
  *structure.
  *******************************/
 int generate_scheme(ServerData * sd) {
-    long long int p = 257;
-    long r = 1;
-    long L = 25;
+    long long int p = 2;
+    long r = 8;
+    long L = 5;
     long security = 128;
     long m = 0;
     long c = 3;
@@ -248,10 +246,18 @@ void generate_upkg_android(ServerData * sd, ServerLink * sl)
     Exit streaming when less than 1024 bytes have
     been read.
     **/
+    keyFile.open("myKey.srv", fstream::out | fstream::trunc);
+    keyFile << *sd->publicKey;
+    keyFile.close();
+
+    keyFile.open("myKey.srv", fstream::in);
+    stream_to_socket(keyFile, &buffer, sl ,1024);
+    keyFile.close();
+/*
     stream << *sd->publicKey;
     stream.clear();
     stream_to_socket(stream, &buffer, sl, 1024);
-
+*/
     cout << "Public Key streaming complete." << endl;
 
     if (!recv_ack(sl))
@@ -277,89 +283,84 @@ void *handle_client(void *param)
 {
     ClientLink * me = (ClientLink*) param;
 
+    pthread_mutex_lock(&me->server->mutex);
+
+    me->server->users++;
+    me->thisClient = me->server->users;
     /**
     This is blocking apparently.
     Send the FHE details to the client
     via socket.
     **/
-    pthread_mutex_lock(&me->server->mutex);
-
-    /**
-    If there is more than one user, wait to access the server
-    data.
-    **/
-    if (me->server->users > 1)
+    if (me->server->currentuser != me->thisClient)
     {
-        pthread_cond_wait(&me->server->myturn, &me->server->mutex);
+        cout << "Client " << me->thisClient << endl;
+        cout << " waiting for mutex."  << endl;
+        pthread_cond_wait(&me->server->myturn,
+                          &me->server->mutex);
     }
 
     cout << "New Client " << me->thisClient << " Accepted" << endl;
 
-    me->server->users++;
-
     generate_upkg_android(me->server, &me->link);
-
-    pthread_mutex_unlock(&me->server->mutex);
 
     /**
     Primary loop to process client positions.
     **/
     while(true)
     {
-        pthread_mutex_lock(&me->server->mutex);
-
-        /**
-        If you are not the current user, free the mutex
-        by sending the signal to the server.
-        **/
-        if (me->server->currentuser != me->thisClient)
+        if (me->server->currentuser == me->thisClient)
         {
-            pthread_cond_signal(&me->server->myturn);
-        }
-
-        else
-        {
-            /**
-            If there is more than one user, wait until the mutex
-            is free/ release it until such time.
-            BLOCKING.
-            **/
-            if (me->server->users > 1)
-            {
-                pthread_cond_wait(&me->server->myturn,
-                                  &me->server->mutex);
-            }
-            /**
-            If I am the current user, handle my location request.
-            **/
             if (me->server->users == me->thisClient)
             {
                 handle_new_user_socket(me->server, &me->link);
-                send_nak(&me->link);
-                me->server->currentuser = 0;
-            }
-            else
-            {
-                handle_user_socket(me->server, &me->link,
-                                   me->thisClient);
-                send_ack(&me->link);
 
-                if (me->server->currentuser == me->server->users)
+                /**
+                If I am the first user, block until another user
+                joins. Otherwise reset counter to the beginning.
+                **/
+                if (me->server->users > 1)
                 {
-                    me->server->currentuser = 0;
+                    me->server->currentuser = 1;
+                    pthread_cond_broadcast(&me->server->myturn);
                 }
                 else
                 {
                     me->server->currentuser++;
                 }
             }
-        }
+            else
+            {
+                handle_user_socket(me->server, &me->link,
+                                   me->thisClient);
 
-        pthread_mutex_unlock(&me->server->mutex);
-        /**
-        Be a dude and share the mutex
-        **/
+                /**
+                If I am the most recently join user,block until
+                another user joins. Otherwise reset counter to
+                the beginning and start from first user.
+                **/
+                if (me->server->currentuser == me->server->users)
+                {
+                    me->server->currentuser = 1;
+                    pthread_cond_broadcast(&me->server->myturn);
+                }
+                else
+                {
+                    me->server->currentuser++;
+                    pthread_cond_broadcast(&me->server->myturn);
+                }
+            }
+
+            cout << "Next Client: " << me->server->currentuser;
+            cout << ", Me: " << me->thisClient << endl;
+        }
+        else
+        {
+            pthread_cond_wait(&me->server->myturn,
+                              &me->server->mutex);
+        }
     }
+    pthread_mutex_unlock(&me->server->mutex);
 }
 
 /*********FHE FUNCTIONS*******************/
@@ -526,6 +527,8 @@ void handle_user_socket(ServerData * sd, ServerLink * sl, int id)
 #endif
     }
 
+    send_ack(sl);
+
     /**
     Generate output ciphertext
     **/
@@ -576,7 +579,7 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
     then import key data from socket.
     **/
 
-    cout << "Getting the new client's public key." << endl;
+    cout << "Getting the NEW client's public key." << endl;
 
     FHEPubKey pk(*sd->context);
 
@@ -635,6 +638,7 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
     **/
     if (sd->users > 1)
     {
+        send_ack(sl);
         cout << "Generating output vector" << endl;
         /**
         Generate output ciphertext, push to socket.
@@ -657,6 +661,10 @@ void handle_new_user_socket(ServerData * sd, ServerLink * sl)
             exit(0);
 #endif
         }
+    }
+    else
+    {
+        send_nak(sl);
     }
 
     delete [] buffer;
