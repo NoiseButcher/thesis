@@ -18,6 +18,7 @@
 #include <sstream>
 #include <fstream>
 #include <iostream>
+#include <semaphore.h>
 
 struct UserPackage {
     unsigned long m;
@@ -44,6 +45,8 @@ struct ServerData {
 	vector<pthread_t> threadID;
 	pthread_mutex_t mutex;
 	pthread_cond_t myturn;
+	pthread_barrier_t barrier;
+	sem_t kickittome;
 };
 
 struct ServerLink {
@@ -57,8 +60,13 @@ struct ServerLink {
 };
 
 struct ClientLink {
+    pthread_t id;
     int thisClient;
     ServerLink link;
+    ServerData * server;
+};
+
+struct QueueHandle {
     ServerData * server;
 };
 
@@ -71,6 +79,7 @@ Ctxt generate_output(Ctxt input, ServerData * sd,
                      const FHEPubKey &pk);
 Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk);
 void *handle_client(void *param);
+void *handle_queue(void *param);
 
 /**
 FILE BASED FUNCTIONS

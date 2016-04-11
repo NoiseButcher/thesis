@@ -26,9 +26,12 @@ int main(int argc, char * argv[])
     Data structures and buffers
     **/
     ServerLink sl;
+    QueueHandle qh;
     int maxthreads;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
     sd.myturn = PTHREAD_COND_INITIALIZER;
+    sem_init(&sd.kickittome, 0, 1);
+    vector<ClientLink> cl;
 
     /**
     Argument check... just in case...
@@ -56,6 +59,13 @@ int main(int argc, char * argv[])
     sd.currentuser = 1;
     sd.users = 0;
 
+    qh.server = &sd;
+    pthread_t queuehandler;
+
+/*
+    pthread_create(&queuehandler, NULL,
+                   handle_queue, (void*)&qh);
+*/
     while (true)
     {
         /**
@@ -69,19 +79,33 @@ int main(int argc, char * argv[])
             **/
             sl.len = sizeof(sl.clientAddr);
             ClientLink client;
-            pthread_t id;
-            sd.threadID.push_back(id);
-
             client.server = &sd;
+            cl.push_back(client);
+            sd.threadID.push_back(cl[sd.users].id);
 
-            if ((client.link.sockFD = accept(sl.sockFD,
+            if ((cl[sd.users].link.sockFD = accept(sl.sockFD,
                                         (struct sockaddr *)&sl.clientAddr,
                                         &sl.len)) > 0)
             {
-                pthread_create(&sd.threadID[sd.users],
+                /*
+
+                if(sd.users == 0)
+                {
+                pthread_barrier_init(&sd.barrier, NULL,
+                                     2);
+                }
+                else
+                {
+                    pthread_barrier_destroy(&sd.barrier);
+                    pthread_barrier_init(&sd.barrier, NULL,
+                                     sd.users+1);
+                }
+                */
+
+                pthread_create(&cl[sd.users].id,
                                NULL,
                                handle_client,
-                               (void*)&client);
+                               (void*)&cl[sd.users]);
             }
             else
             {
@@ -108,6 +132,9 @@ int main(int argc, char * argv[])
     Destroy thread mutex.
     **/
     pthread_mutex_destroy(&sd.mutex);
+    pthread_cond_destroy(&sd.myturn);
+    pthread_barrier_destroy(&sd.barrier);
+
     return 0;
 }
 
@@ -283,7 +310,8 @@ void *handle_client(void *param)
 {
     ClientLink * me = (ClientLink*) param;
 
-    pthread_mutex_lock(&me->server->mutex);
+    //pthread_mutex_lock(&me->server->mutex);
+    sem_wait(&me->server->kickittome);
 
     me->server->users++;
     me->thisClient = me->server->users;
@@ -296,13 +324,18 @@ void *handle_client(void *param)
     {
         cout << "Client " << me->thisClient << endl;
         cout << " waiting for mutex."  << endl;
+        /*
         pthread_cond_wait(&me->server->myturn,
                           &me->server->mutex);
+        */
+        //pthread_barrier_wait(&me->server->barrier);
     }
 
     cout << "New Client " << me->thisClient << " Accepted" << endl;
 
     generate_upkg_android(me->server, &me->link);
+
+    sem_post(&me->server->kickittome);
 
     /**
     Primary loop to process client positions.
@@ -311,6 +344,7 @@ void *handle_client(void *param)
     {
         if (me->server->currentuser == me->thisClient)
         {
+            sem_wait(&me->server->kickittome);
             if (me->server->users == me->thisClient)
             {
                 handle_new_user_socket(me->server, &me->link);
@@ -322,11 +356,12 @@ void *handle_client(void *param)
                 if (me->server->users > 1)
                 {
                     me->server->currentuser = 1;
-                    pthread_cond_broadcast(&me->server->myturn);
+                    //pthread_cond_broadcast(&me->server->myturn);
                 }
                 else
                 {
                     me->server->currentuser++;
+                    //pthread_cond_broadcast(&me->server->myturn);
                 }
             }
             else
@@ -342,25 +377,65 @@ void *handle_client(void *param)
                 if (me->server->currentuser == me->server->users)
                 {
                     me->server->currentuser = 1;
-                    pthread_cond_broadcast(&me->server->myturn);
+                    //pthread_cond_broadcast(&me->server->myturn);
                 }
                 else
                 {
                     me->server->currentuser++;
-                    pthread_cond_broadcast(&me->server->myturn);
+                    //pthread_cond_broadcast(&me->server->myturn);
                 }
             }
 
             cout << "Next Client: " << me->server->currentuser;
-            cout << ", Me: " << me->thisClient << endl;
+            cout << ", Me: " << me->thisClient;
+            cout << ", " << me->id << endl;
+
+            sem_post(&me->server->kickittome);
         }
+
         else
         {
+            /*
             pthread_cond_wait(&me->server->myturn,
                               &me->server->mutex);
+            */
+            cout << me->thisClient;
+            cout << " : " << me->server->threadID[me->thisClient] << endl;
+            sleep(10);
         }
+
+        //pthread_barrier_wait(&me->server->barrier);
     }
-    pthread_mutex_unlock(&me->server->mutex);
+    //pthread_mutex_unlock(&me->server->mutex);
+}
+
+/*********************
+ *Thread to handle the information
+ *queue between threads.
+ *********************/
+void *handle_queue(void *param)
+{
+    QueueHandle * threads = (QueueHandle*) param;
+
+    //pthread_mutex_lock(&threads->server->mutex);
+
+    cout << "QueueHandler Started." << endl;
+
+    while(true) {
+        /*
+        if ((threads->server->currentuser >=
+           threads->server->users) &&
+           (threads->server->users > 1))
+        {
+            pthread_cond_broadcast(&threads->server->myturn);
+        }
+
+        pthread_cond_wait(&threads->server->myturn
+                          &threads->server->mutex);
+        */
+
+    }
+    //pthread_mutex_unlock(&threads->server->mutex);
 }
 
 /*********FHE FUNCTIONS*******************/
