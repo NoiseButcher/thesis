@@ -7,15 +7,14 @@
  *Generates the basis for the security scheme
  *and distributes it amongst connected clients.
  ************************************/
-ServerData sd;
 
 int main(int argc, char * argv[])
 {
     /**
     Data structures and buffers
     **/
+    ServerData sd;
     ServerLink sl;
-    int maxthreads;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
     sd.myturn = PTHREAD_COND_INITIALIZER;
     sem_init(&sd.kickittome, 0, 1);
@@ -29,9 +28,8 @@ int main(int argc, char * argv[])
         return 0;
     }
 
-    maxthreads = atoi(argv[2]);
-
-    pthread_t freads[maxthreads];
+    sd.maxthreads = atoi(argv[2]);
+    pthread_t freads[sd.maxthreads];
 
     generate_scheme(&sd);
 
@@ -53,7 +51,7 @@ int main(int argc, char * argv[])
         /**
         Handle new connections if there is space.
         **/
-        if (sd.users < maxthreads)
+        if (sd.users < sd.maxthreads)
         {
             /**
             Generate all of the necessary data
@@ -96,52 +94,25 @@ int main(int argc, char * argv[])
     }
 
     /**
-    Destroy thread mutex.
+    Destroy synchronisation things.
     **/
     pthread_mutex_destroy(&sd.mutex);
     pthread_cond_destroy(&sd.myturn);
-    pthread_barrier_destroy(&sd.barrier);
+    sem_destroy(&sd.kickittome);
 
     return 0;
 }
 
-/**********GENERIC FUNCTIONS*********************/
-/*******************************
- *Generate the FHE scheme with the specified
- *parameters. Writes the scheme to the ServerData
- *structure.
- *******************************/
-int generate_scheme(ServerData * sd) {
-    long long int p = 2;
-    long r = 8;
-    long L = 5;
-    long security = 128;
-    long m = 0;
-    long c = 3;
-    long w = 64;
-    long d = 0;
-    ZZX G;
-
-    m = FindM(security, L, c, p, d, 3, 0);
-    sd->context = new FHEcontext(m, p, r);
-    buildModChain(*sd->context, L, c);
-
-    cout << "Scheme Generation Complete." << endl;
-
-    return 1;
-}
-
+/**********LOGISTICS FUNCTIONS*********************/
 /**********************************
  *Stream the Context Base, Context and
  *Public Key to a connected client.
  *Socket mode version.
  **********************************/
-void generate_upkg_android(ServerData * sd, ClientLink * sl)
+void generate_upkg(ServerData * sd, ClientLink * sl)
 {
     stringstream stream;
     char * buffer = new char[1025];
-    stream.str("");
-    stream.clear();
 
     cout << "Streaming base data..." << endl;
 
@@ -177,27 +148,21 @@ void generate_upkg_android(ServerData * sd, ClientLink * sl)
 #endif
     }
 
-#ifdef DEBUG
     cout << "Obtaining client public key." << endl;
-#endif
 
     socket_to_stream(stream, &buffer, sl ,1024);
-    Cluster cx;
-    cx.thisKey = new FHEPubKey(*sd->context);
+    Cluster cx(*sd->context);
     stream >> *cx.thisKey;
 
-#ifdef DEBUG
     cout << "Appending to Cluster." << sizeof(cx) << endl;
-#endif
+
     sd->cluster.push_back(cx);
     stream.str("");
     stream.clear();
 
     send_ack(sl);
 
-#ifdef DEBUG
     cout << "Client install complete." << endl;
-#endif
 
     delete [] buffer;
 }
@@ -226,7 +191,7 @@ void *handle_client(void *param)
     cout << "New Client " << me.thisClient << " Accepted on ";
     cout << me.sockFD << endl;
 
-    generate_upkg_android(me.server, &me);
+    generate_upkg(me.server, &me);
 
     pthread_mutex_unlock(&me.server->mutex);
 
@@ -241,7 +206,7 @@ void *handle_client(void *param)
 
             if (me.server->users == me.thisClient)
             {
-                handle_new_user_socket(me.server, &me,
+                handle_new_user(me.server, &me,
                                        (me.thisClient - 1));
 
                 /**
@@ -259,8 +224,7 @@ void *handle_client(void *param)
             }
             else
             {
-                handle_user_socket(me.server, &me,
-                                   (me.thisClient - 1));
+                handle_user(me.server, &me, (me.thisClient - 1));
 
                 /**
                 If I am the most recently join user,block until
@@ -292,82 +256,59 @@ void *handle_client(void *param)
     }
 }
 
-/*********FHE FUNCTIONS*******************/
-/****************************
- *When a new position comes in,
- *generate an output ciphertext that
- *should correspond to the square of
- *the distance to each other user
- *****************************/
-Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
-                     const FHEPubKey &pk)
+/*******************************
+ *Handle a new user connecting to the server for the first time.
+ *Either process their location and send it, then append
+ *their position to the current vector,
+ *Or simply send add them to the vector if they are the first
+ *client to join.
+ *******************************/
+void handle_new_user(ServerData * sd, ClientLink * sl, int id)
 {
-    int i;
+    stringstream stream;
+    char * buffer = new char[1025];
+    int k;
 
     /**
-    Blank vector and ciphertext to facilitate operations
-    on server key encrypted input. pvec() is initialised with
-    as an empty vector encrypted with the server's public key.
+    Create temporary copy of client's public key,
+    then import key data from socket.
     **/
-    Ctxt cx(pk);
-    vector<long> pvec;
-
-    for (int i = 0; i < pk.getContext().ea->size(); i++)
+    for (k = 0; k < sd->users; k++)
     {
-		pvec.push_back(0);
-	}
+        send_ack(sl);
+        Ctxt newusr(*sd->cluster[k].thisKey);
+        stream << *sd->cluster[k].thisKey;
+        stream_to_socket(stream, &buffer, sl, 1024);
+        stream.str("");
+        stream.clear();
 
-	pk.getContext().ea->encrypt(cx, pk, pvec);
+        socket_to_stream(stream, &buffer, sl, 1024);
+        stream >> newusr;
+        stream.str("");
+        stream.clear();
 
-	/**
-	Iterate over the current collection of encrypted coordinate
-	sets and create a single ciphertext corresponding to the
-	Euclidean distances between the input and all of the existing
-	co-ordinates.
-	**/
-    for (i=0; i < locs.size(); i++)
-    {
-        Ctxt zx(locs[i]); /**Copy coordinate set i to a temporary Ctxt**/
-        zx = compute(zx, input, pk); /**Calculate distance**/
-        zx.getContext().ea->shift(zx, i); /**Offset Ctxt based on index i**/
-        cx+=zx; /**Add offset ciphertext to empty output**/
+        sd->cluster[id].thisLoc.push_back(newusr);
     }
 
-    return cx;
-}
+    send_nak(sl);
 
-/**************************
- *Creates a single element ciphertext
- *that contains the x^2 + y^2 value of
- *two Cartesian co-ordinate pairs.
- **************************/
-Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
-{
+    cout << "First locations for client " << sl->thisClient;
+    cout << " loaded." << endl;
+
     /**
-    Create a "purge" vector to remove extraneous values
-    from the ciphertext after computation.
-    purge = Enc[1 0 0 0 ...]
+    Send ACK when the ciphertext is acquired.
     **/
-    vector<long> pvec;
-    Ctxt purge(pk);
-    pvec.push_back(1);
-
-    for (int i = 1; i < pk.getContext().ea->size(); i++)
+    if (!send_ack(sl))
     {
-		pvec.push_back(0);
-	}
+#ifdef DEBUG
+        cout << "Socket buffer error." << endl;
+        exit(0);
+#endif
+    }
 
-    pk.getContext().ea->encrypt(purge, pk, pvec);
+    send_nak(sl);
 
-	c1.addCtxt(c2, true); /**c1 = Enc[(x1-x2) (y1-y2) 0 0 ...] **/
-	c1.square(); /**c1 = Enc[(x1-x2)^2 (y1-y2)^2 0 0 ...] **/
-
-	Ctxt inv(c1); /**inv = Enc[(y1-y2)^2 0 .. 0 (x1-x2)^2] **/
-	inv.getContext().ea->rotate(inv, -1);
-
-	c1+=inv; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. 0 (x1-x2)^2] **/
-	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
-	return c1;
+    delete [] buffer;
 }
 
 /**********************
@@ -377,7 +318,7 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
  *Returns the updated vector of co-ords as an output
  *and sends the distances to the client via socket.
  *********************/
-void handle_user_socket(ServerData * sd, ClientLink * sl, int id)
+void handle_user(ServerData * sd, ClientLink * sl, int id)
 {
     stringstream stream;
     char * buffer = new char[1025];
@@ -465,59 +406,107 @@ void handle_user_socket(ServerData * sd, ClientLink * sl, int id)
     delete [] buffer;
 }
 
+/*********FHE FUNCTIONS*******************/
 /*******************************
- *Handle a new user connecting to the server for the first time.
- *Either process their location and send it, then append
- *their position to the current vector,
- *Or simply send add them to the vector if they are the first
- *client to join.
+ *Generate the FHE scheme with the specified
+ *parameters. Writes the scheme to the ServerData
+ *structure.
  *******************************/
-void handle_new_user_socket(ServerData * sd, ClientLink * sl, int id)
+int generate_scheme(ServerData * sd) {
+    long long int p = 2;
+    long r = 8;
+    long L = 5;
+    long security = 128;
+    long m = 0;
+    long c = 3;
+    long w = 64;
+    long d = 0;
+    ZZX G;
+
+    m = FindM(security, L, c, p, d, 3, 0);
+    sd->context = new FHEcontext(m, p, r);
+    buildModChain(*sd->context, L, c);
+
+    cout << "Scheme Generation Complete." << endl;
+
+    return 1;
+}
+
+/****************************
+ *When a new position comes in,
+ *generate an output ciphertext that
+ *should correspond to the square of
+ *the distance to each other user
+ *****************************/
+Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
+                     const FHEPubKey &pk)
 {
-    stringstream stream;
-    char * buffer = new char[1025];
-    int k;
+    int i;
 
     /**
-    Create temporary copy of client's public key,
-    then import key data from socket.
+    Blank vector and ciphertext to facilitate operations
+    on server key encrypted input. pvec() is initialised with
+    as an empty vector encrypted with the server's public key.
     **/
-    for (k = 0; k < sd->users; k++)
+    Ctxt cx(pk);
+    vector<long> pvec;
+
+    for (int i = 0; i < pk.getContext().ea->size(); i++)
     {
-        send_ack(sl);
-        Ctxt newusr(*sd->cluster[k].thisKey);
-        stream << *sd->cluster[k].thisKey;
-        stream_to_socket(stream, &buffer, sl, 1024);
-        stream.str("");
-        stream.clear();
+		pvec.push_back(0);
+	}
 
-        socket_to_stream(stream, &buffer, sl, 1024);
-        stream >> newusr;
-        stream.str("");
-        stream.clear();
+	pk.getContext().ea->encrypt(cx, pk, pvec);
 
-        sd->cluster[id].thisLoc.push_back(newusr);
+	/**
+	Iterate over the current collection of encrypted coordinate
+	sets and create a single ciphertext corresponding to the
+	Euclidean distances between the input and all of the existing
+	co-ordinates.
+	**/
+    for (i=0; i < locs.size(); i++)
+    {
+        Ctxt zx(locs[i]); /**Copy coordinate set i to a temporary Ctxt**/
+        zx = compute(zx, input, pk); /**Calculate distance**/
+        zx.getContext().ea->shift(zx, i); /**Offset Ctxt based on index i**/
+        cx+=zx; /**Add offset ciphertext to empty output**/
     }
 
-    send_nak(sl);
+    return cx;
+}
 
-    cout << "First locations for client " << sl->thisClient;
-    cout << " loaded." << endl;
-
+/**************************
+ *Creates a single element ciphertext
+ *that contains the x^2 + y^2 value of
+ *two Cartesian co-ordinate pairs.
+ **************************/
+Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
+{
     /**
-    Send ACK when the ciphertext is acquired.
+    Create a "purge" vector to remove extraneous values
+    from the ciphertext after computation.
+    purge = Enc[1 0 0 0 ...]
     **/
-    if (!send_ack(sl))
+    vector<long> pvec;
+    Ctxt purge(pk);
+    pvec.push_back(1);
+
+    for (int i = 1; i < pk.getContext().ea->size(); i++)
     {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
+		pvec.push_back(0);
+	}
 
-    send_nak(sl);
+    pk.getContext().ea->encrypt(purge, pk, pvec);
 
-    delete [] buffer;
+	c1.addCtxt(c2, true); /**c1 = Enc[(x1-x2) (y1-y2) 0 0 ...] **/
+	c1.square(); /**c1 = Enc[(x1-x2)^2 (y1-y2)^2 0 0 ...] **/
+
+	Ctxt inv(c1); /**inv = Enc[(y1-y2)^2 0 .. 0 (x1-x2)^2] **/
+	inv.getContext().ea->rotate(inv, -1);
+
+	c1+=inv; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. 0 (x1-x2)^2] **/
+	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
+	return c1;
 }
 
 /***************SOCKET FUNCTIONS**********************/
@@ -637,8 +626,8 @@ bool recv_ack(ClientLink * sl)
     ack[1] = 'C';
     ack[2] = 'K';
     ack[3] = '\0';
-    int blk = sizeof(ack);
-    if (stream_from_socket(&buffer, sizeof(buffer), sl) == blk)
+    if (stream_from_socket(&buffer,
+                           sizeof(buffer), sl) == sizeof(ack))
     {
         if (strcmp(ack, buffer) == 0)
         {
@@ -675,10 +664,12 @@ void stream_to_socket(istream &stream, char ** buffer,
         stream.read(*buffer, blocksize);
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
+
 #ifdef DEBUG
         tx += k;
         totalloops++;
 #endif // DEBUG
+
     }
     while (k == blocksize);
 
@@ -709,16 +700,19 @@ void socket_to_stream(ostream &stream, char ** buffer,
         k = 0;
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
+
 #ifdef DEBUG
         rx += k;
         totalloops++;
 #endif // DEBUG
+
     }
     while (k == blocksize);
 
     stream.clear();
 
 #ifdef DEBUG
-        cout << totalloops << " : " << rx << " : " << stream.tellp() << endl;
+        cout << totalloops << " : " << rx;
+        cout << " : " << stream.tellp() << endl;
 #endif // DEBUG
 }

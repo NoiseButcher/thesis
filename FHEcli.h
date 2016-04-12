@@ -49,11 +49,11 @@ struct ServerLink
 };
 
 /**
-UNIVERSAL FUNCTIONS
+ALL MODE FUNCTIONS
 **/
 pair<int, int> get_gps();
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk);
-void display_positions(vector<long> d, int cnt);
+void display_positions(vector<long> d, int limit);
 
 /**
 SOCKET FUNCTIONS
@@ -74,8 +74,9 @@ void socket_to_stream(ostream &stream, char ** buffer,
 /**
 ANDROID FUNCTIONS
 **/
-vector<long> get_distances_android(UserPackage * upk);
-int send_location_android(UserPackage * upk);
 void install_upkg_android(UserPackage * upk);
+int send_location_android(UserPackage * upk);
+vector<long> get_distances_android(UserPackage * upk);
 bool recv_ack_android();
+bool send_ack_android();
 #endif

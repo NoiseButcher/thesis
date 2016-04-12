@@ -20,41 +20,61 @@
 #include <iostream>
 #include <semaphore.h>
 
-struct Cluster {
+/**
+*Class for storing client specific information, the amount of
+*these will be equal to the amount of clients on the system at
+*any one time.
+**/
+class Cluster {
+public:
+    /**
+    Client X's public key.
+    **/
     FHEPubKey *thisKey;
+    /**
+    Client X's location encrypted with every client's public key.
+    **/
     vector<Ctxt> thisLoc;
+
+    /**
+    Every client's location encrypted with Client X's public key.
+    With the exception of Client X's own location.
+    **/
     vector <Ctxt> theirLocs;
+
+    /**
+    Constructor for this class and public key
+    **/
+    Cluster(FHEcontext& context);
 };
 
-struct UserPackage {
-    unsigned long m;
-    unsigned long p;
-    unsigned long r;
-    vector <long> gens;
-    vector <long> ords;
-	FHEcontext *context;
-	FHESecKey *secretKey;
-	EncryptedArray *ea;
-	const FHEPubKey *publicKey;
-	long nslots;
-};
+Cluster::Cluster(FHEcontext& context)
+{
+    thisKey = new FHEPubKey(context);
+}
 
+/**
+*Primary server data structure, contains all necessary shared
+*information; FHE scheme data, client keys and positions, thread
+*id and synchronisation data, user tracking data.
+**/
 struct ServerData {
     FHEcontext *context;
-	FHESecKey *secretKey;
-	const FHEPubKey *publicKey;
-	EncryptedArray *ea;
-	long nslots;
 	vector<Cluster> cluster;
-	int users;
-	int currentuser;
 	vector<pthread_t> threadID;
+    int users;
+	int currentuser;
+	int maxthreads;
 	pthread_mutex_t mutex;
 	pthread_cond_t myturn;
-	pthread_barrier_t barrier;
 	sem_t kickittome;
 };
 
+/**
+*Data structure to handle the server side connection
+*to all of the client, only one instance should exist
+*per server. "Listening" struct.
+**/
 struct ServerLink {
     int sockFD;
     int port;
@@ -64,6 +84,11 @@ struct ServerLink {
     struct sockaddr_in servAddr;
 };
 
+/**
+*Data structure to handle client side connection within
+*each thread. Each client is allocated one of these.
+*"Accepting" struct.
+**/
 struct ClientLink {
     pthread_t id;
     int thisClient;
@@ -73,19 +98,24 @@ struct ClientLink {
 };
 
 /**
-GENERIC FUNCTIONS
-FHE OPERATION FUNCTIONS
+LOGISTICS FUNCTIONS
+**/
+void generate_upkg(ServerData * sd, ClientLink * sl);
+void *handle_client(void *param);
+void handle_new_user(ServerData * sd, ClientLink * sl, int id);
+void handle_user(ServerData * sd, ClientLink * sl, int id);
+
+/**
+FHE FUNCTIONS
 **/
 int generate_scheme(ServerData * sd);
 Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
                      const FHEPubKey &pk);
 Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk);
-void *handle_client(void *param);
 
 /**
-SOCKET-BASED FUNCTIONS
+NETWORKING FUNCTIONS
 **/
-void generate_upkg_android(ServerData * sd, ClientLink * sl);
 int prepare_server_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize,
                        ClientLink * sl);
@@ -93,9 +123,6 @@ int write_to_socket(char ** buffer, int blocksize, ClientLink * sl);
 bool send_ack(ClientLink * sl);
 bool send_nak(ClientLink * sl);
 bool recv_ack(ClientLink * sl);
-void handle_user_socket(ServerData * sd, ClientLink * sl, int id);
-void handle_new_user_socket(ServerData * sd, ClientLink * sl,
-                            int id);
 void stream_to_socket(istream &stream, char ** buffer,
                       ClientLink * sl, int blocksize);
 void socket_to_stream(ostream &stream, char ** buffer,
