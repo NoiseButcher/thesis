@@ -95,6 +95,7 @@ struct ClientLink {
     ServerData * server;
     int sockFD;
     int xfer;
+    bool flag;
 };
 
 /**

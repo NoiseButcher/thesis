@@ -154,7 +154,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     Cluster cx(*sd->context);
     stream >> *cx.thisKey;
 
-    cout << "Appending to Cluster." << sizeof(cx) << endl;
+    cout << "Appending to Cluster." << endl;
 
     sd->cluster.push_back(cx);
     stream.str("");
@@ -179,14 +179,11 @@ void *handle_client(void *param)
 
     pthread_mutex_lock(&me.server->mutex);
 
+    me.flag = false;
+
     me.server->users++;
 
     me.thisClient = me.server->users;
-    /**
-    This is blocking apparently.
-    Send the FHE details to the client
-    via socket.
-    **/
 
     cout << "New Client " << me.thisClient << " Accepted on ";
     cout << me.sockFD << endl;
@@ -204,11 +201,11 @@ void *handle_client(void *param)
         {
             pthread_mutex_lock(&me.server->mutex);
 
-            if (me.server->users == me.thisClient)
+            if (me.flag == false)
             {
                 handle_new_user(me.server, &me,
                                        (me.thisClient - 1));
-
+                me.flag = true;
                 /**
                 If I am the first user, block until another user
                 joins. Otherwise reset counter to the beginning.
@@ -231,7 +228,8 @@ void *handle_client(void *param)
                 another user joins. Otherwise reset counter to
                 the beginning and start from first user.
                 **/
-                if (me.server->currentuser == me.server->users)
+                if ((me.server->currentuser == me.server->users)
+                    && (me.server->users > 2))
                 {
                     me.server->currentuser = 1;
                 }
@@ -246,12 +244,14 @@ void *handle_client(void *param)
             cout << ", " << me.id << endl;
 
             pthread_mutex_unlock(&me.server->mutex);
-            sleep(10);
+            sleep(5);
         }
-
         else
         {
-
+            cout << "Client " << me.thisClient;
+            cout << " on socket " << me.sockFD;
+            cout << " waiting for their turn." << endl;
+            sleep(5);
         }
     }
 }
@@ -359,6 +359,8 @@ void handle_user(ServerData * sd, ClientLink * sl, int id)
         exit(0);
 #endif
     }
+
+    send_ack(sl);
 
     sd->cluster[id].theirLocs.erase(sd->cluster[id].theirLocs.begin(),
                                     sd->cluster[id].theirLocs.end());
