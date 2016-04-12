@@ -2,6 +2,7 @@
 #include <sys/resource.h>
 
 #define DEBUG
+#define DEMO
 /***********************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
@@ -210,7 +211,12 @@ void *handle_client(void *param)
                 If I am the first user, block until another user
                 joins. Otherwise reset counter to the beginning.
                 **/
+
+#ifdef DEMO
+                if (me.server->users > 2)
+#else
                 if (me.server->users > 1)
+#endif // DEMO
                 {
                     me.server->currentuser = 1;
                 }
