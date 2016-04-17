@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <NTL/lzz_pXFactoring.h>
+#include <NTL/matrix.h>
 #include "FHE.h"
 #include "EncryptedArray.h"
 #include <stdlib.h>

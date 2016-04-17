@@ -58,6 +58,20 @@ int main(int argc, char * argv[])
     install_upkg_socket(&op, &me);
 
     cout << "FHE Scheme installed." << endl;
+
+    send_location_socket(&me, &op);
+
+    cout << "First position sent." << endl;
+
+    while (!await_server_update(&op));
+
+    cout << "Server update received." << endl;
+
+    them = get_distances_socket(&op, &me);
+
+    cout << "First distance calcs:" << endl;
+
+    display_positions(them, 10);
 #else
     install_upkg_android(&me);
 #endif
@@ -65,18 +79,20 @@ int main(int argc, char * argv[])
 #ifndef ANDROID
     while (send_location_socket(&me, &op) == 1)
     {
-    cout << "Location Sent." << endl;
+        cout << "Location sent." << endl;
 
-        if (recv_ack(&op))
-        {
-            them = get_distances_socket(&op, &me);
+        while (!await_server_update(&op));
 
-            cout << "Distances Received." << endl;
+        cout << "Server updated." << endl;
 
-            display_positions(them, 10);
+        them = get_distances_socket(&op, &me);
 
-            cout << "Distances Decoded." << endl;
-        }
+        cout << "Distances received." << endl;
+
+        display_positions(them, 10);
+
+        cout << "Distances decoded." << endl;
+
 #else
     while (send_location_android(&me) == 1)
     {
@@ -396,6 +412,34 @@ vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk)
 
     delete [] buffer;
     return d;
+}
+
+/*****************
+ *Function to sit on the port when new a new user
+ *connects to the system. Once this client's position has
+ *been uploaded, each other client must encrypt their own with
+ *this new public key.
+ *****************/
+bool await_server_update(ServerLink * sl)
+{
+    char * buffer = new char[7];
+    char * refbuf = new char[7];
+    string n = "UPDATED";
+    refbuf = &n[0];
+
+    cout << refbuf << endl;
+
+    stream_from_socket(&buffer, sizeof(buffer), sl);
+    if (strcmp(buffer, refbuf) == 0)
+    {
+        delete [] buffer;
+        delete [] refbuf;
+        return true;
+    }
+
+    delete [] buffer;
+    delete [] refbuf;
+    return false;
 }
 
 /*****

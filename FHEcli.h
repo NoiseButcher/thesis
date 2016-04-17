@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <NTL/lzz_pXFactoring.h>
+#include <NTL/matrix.h>
 #include "FHE.h"
 #include "EncryptedArray.h"
 #include <stdlib.h>
@@ -66,6 +67,7 @@ bool recv_ack(ServerLink * sl);
 int send_location_socket(UserPackage * upk, ServerLink * sl);
 void install_upkg_socket(ServerLink * sl, UserPackage * upk);
 vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk);
+bool await_server_update(ServerLink * sl);
 void stream_to_socket(istream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);
 void socket_to_stream(ostream &stream, char ** buffer,
