@@ -68,7 +68,7 @@ struct ServerData {
 	int maxthreads;
 	pthread_mutex_t mutex;
 	pthread_cond_t myturn;
-	sem_t kickittome;
+	pthread_barrier_t popcap;
 };
 
 /**
@@ -104,8 +104,9 @@ LOGISTICS FUNCTIONS
 **/
 void generate_upkg(ServerData * sd, ClientLink * sl);
 void *handle_client(void *param);
-void handle_new_user(ServerData * sd, ClientLink * sl, int id);
-void handle_user(ServerData * sd, ClientLink * sl, int id);
+void *handle_population(void *param);
+void get_client_position(ServerData * sd, ClientLink * sl, int id);
+void calculate_distances(ServerData * sd, ClientLink * sl, int id);
 
 /**
 FHE FUNCTIONS
@@ -122,6 +123,7 @@ int prepare_server_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize,
                        ClientLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ClientLink * sl);
+void send_server_update(ClientLink * sl);
 bool send_ack(ClientLink * sl);
 bool send_nak(ClientLink * sl);
 bool recv_ack(ClientLink * sl);

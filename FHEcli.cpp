@@ -63,9 +63,9 @@ int main(int argc, char * argv[])
 
     cout << "First position sent." << endl;
 
-    while (!await_server_update(&op));
+    //while (!await_server_update(&op));
 
-    cout << "Server update received." << endl;
+    //cout << "Server update received." << endl;
 
     them = get_distances_socket(&op, &me);
 
@@ -81,9 +81,9 @@ int main(int argc, char * argv[])
     {
         cout << "Location sent." << endl;
 
-        while (!await_server_update(&op));
+        //while (!await_server_update(&op));
 
-        cout << "Server updated." << endl;
+        //cout << "Server updated." << endl;
 
         them = get_distances_socket(&op, &me);
 
@@ -165,12 +165,15 @@ Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 void display_positions(vector<long> d, int limit)
 {
     int i;
-    for (i=0; i < limit; i++)
+    //for (i=0; i < limit; i++)
+    do
     {
         cout << "User " << i << " is ";
         cout << sqrt(d[i]) << "m ";
         cout << "from your position." << endl;
+        i++;
     }
+    while (d[i] > 0);
 }
 
 /*******************SOCKET FUNCTIONS************************/

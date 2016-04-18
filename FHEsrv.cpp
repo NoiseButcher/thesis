@@ -18,7 +18,6 @@ int main(int argc, char * argv[])
     ServerLink sl;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
     sd.myturn = PTHREAD_COND_INITIALIZER;
-    sem_init(&sd.kickittome, 0, 1);
 
     /**
     Argument check... just in case...
@@ -41,10 +40,10 @@ int main(int argc, char * argv[])
     prepare_server_socket(&sl, argv);
 
 #ifdef DEBUG
-    cout << "Socket Prepped." << endl;
+    cout << "Connection open for clients." << endl;
 #endif // DEBUG
 
-    sd.currentuser = 1;
+    sd.currentuser = 0;
     sd.users = 0;
 
     while (true)
@@ -68,6 +67,22 @@ int main(int argc, char * argv[])
                                         (struct sockaddr *)&sl.clientAddr,
                                         &sl.len)) > 0)
             {
+                /**Barrier management code, rebuild the barrier
+                 *whenever a new user connects.
+                 **/
+                if (sd.users > 1)
+                {
+                    pthread_barrier_destroy(&sd.popcap);
+                    pthread_barrier_init(&sd.popcap,
+                                        NULL,
+                                        sd.users + 1);
+                }
+                else if (sd.users < 1)
+                {
+                    pthread_barrier_init(&sd.popcap,
+                                        NULL, 2);
+                }
+
                 pthread_create(&freads[sd.users],
                                NULL,
                                handle_client,
@@ -97,9 +112,9 @@ int main(int argc, char * argv[])
     /**
     Destroy synchronisation things.
     **/
+    pthread_barrier_destroy(&sd.popcap);
     pthread_mutex_destroy(&sd.mutex);
     pthread_cond_destroy(&sd.myturn);
-    sem_destroy(&sd.kickittome);
 
     return 0;
 }
@@ -180,100 +195,107 @@ void *handle_client(void *param)
 
     pthread_mutex_lock(&me.server->mutex);
 
-    me.flag = false;
+    me.thisClient = me.server->users;
 
     me.server->users++;
-
-    me.thisClient = me.server->users;
 
     cout << "New Client " << me.thisClient << " Accepted on ";
     cout << me.sockFD << endl;
 
     generate_upkg(me.server, &me);
 
+    /**This barrier is to allow other clients to add
+      *this client's public key to their encrypted
+      *locations**/
     pthread_mutex_unlock(&me.server->mutex);
+    pthread_barrier_wait(&me.server->popcap);
+
+    /**Barrier tomfoolery to handle the first client**/
+    if (me.thisClient == 0)
+    {
+        pthread_barrier_wait(&me.server->popcap);
+    }
+
+    pthread_mutex_lock(&me.server->mutex);
+
+    get_client_position(me.server, &me, me.thisClient);
+
+    if (me.thisClient == 1)
+    {
+        pthread_mutex_unlock(&me.server->mutex);
+        pthread_barrier_wait(&me.server->popcap);
+        sleep(2);
+        pthread_mutex_lock(&me.server->mutex);
+    }
+
+    calculate_distances(me.server, &me, me.thisClient);
+
+    pthread_mutex_unlock(&me.server->mutex);
+
+    /**Final bit of tomfoolery**/
+    if (me.thisClient == 0)
+    {
+        pthread_barrier_wait(&me.server->popcap);
+    }
 
     /**
     Primary loop to process client positions.
     **/
     while(true)
     {
-        if (me.server->currentuser == me.thisClient)
+        if (me.thisClient == me.server->currentuser)
         {
             pthread_mutex_lock(&me.server->mutex);
+            get_client_position(me.server, &me, me.thisClient);
+            calculate_distances(me.server, &me, me.thisClient);
 
-            if (me.flag == false)
+            if (me.server->currentuser == me.server->users)
             {
-                handle_new_user(me.server, &me,
-                                       (me.thisClient - 1));
-                me.flag = true;
-                /**
-                If I am the first user, block until another user
-                joins. Otherwise reset counter to the beginning.
-                **/
-
-#ifdef DEMO
-                if (me.server->users > 2)
-#else
-                if (me.server->users > 1)
-#endif // DEMO
-                {
-                    me.server->currentuser = 1;
-                }
-                else
-                {
-                    me.server->currentuser++;
-                }
+                me.server->currentuser = 0;
             }
             else
             {
-                handle_user(me.server, &me, (me.thisClient - 1));
-
-                /**
-                If I am the most recently join user,block until
-                another user joins. Otherwise reset counter to
-                the beginning and start from first user.
-                **/
-                if ((me.server->currentuser == me.server->users)
-                    && (me.server->users > 2))
-                {
-                    me.server->currentuser = 1;
-                }
-                else
-                {
-                    me.server->currentuser++;
-                }
+                me.server->currentuser++;
             }
 
-            cout << "Next Client: " << me.server->currentuser;
-            cout << ", Me: " << me.thisClient;
-            cout << ", " << me.id << endl;
-
             pthread_mutex_unlock(&me.server->mutex);
-            sleep(5);
         }
-        else
+
+        /**
+        Test the size of this client's location vector
+        vs the amount of users on the server, and see if it
+        needs updating.
+        **/
+        if (me.server->cluster[me.thisClient].thisLoc.size() !=
+            me.server->users)
         {
-            cout << "Client " << me.thisClient;
-            cout << " on socket " << me.sockFD;
-            cout << " waiting for their turn." << endl;
-            sleep(5);
+            pthread_mutex_lock(&me.server->mutex);
+            get_client_position(me.server, &me, me.thisClient);
+            pthread_mutex_unlock(&me.server->mutex);
+            pthread_barrier_wait(&me.server->popcap);
         }
     }
 }
 
 /*******************************
- *Handle a new user connecting to the server for the first time.
- *Either process their location and send it, then append
- *their position to the current vector,
- *Or simply send add them to the vector if they are the first
- *client to join.
+ *Obtains the location of the client encrypted
+ *with all of the public keys on the server at
+ *any one time.
  *******************************/
-void handle_new_user(ServerData * sd, ClientLink * sl, int id)
+void get_client_position(ServerData * sd, ClientLink * sl, int id)
 {
     stringstream stream;
     char * buffer = new char[1025];
     int k;
+
+    cout << "Acquiring encrypted positions" << endl;
+
+    /**Erase previous locations if they exist**/
+    if (sd->cluster[id].thisLoc.size() > 0)
+    {
+        sd->cluster[id].thisLoc.erase(sd->cluster[id].thisLoc.begin(),
+                                        sd->cluster[id].thisLoc.end());
+    }
 
     /**
     Create temporary copy of client's public key,
@@ -298,7 +320,7 @@ void handle_new_user(ServerData * sd, ClientLink * sl, int id)
 
     send_nak(sl);
 
-    cout << "First locations for client " << sl->thisClient;
+    cout << "Locations for client " << sl->thisClient;
     cout << " loaded." << endl;
 
     /**
@@ -312,64 +334,27 @@ void handle_new_user(ServerData * sd, ClientLink * sl, int id)
 #endif
     }
 
-    send_nak(sl);
-
     delete [] buffer;
 }
 
 /**********************
- *Socket code to handle connection between client and
- *server, takes a client's encrypted location and the vector
- *of encrypted co-ordinate sets as input.
- *Returns the updated vector of co-ords as an output
- *and sends the distances to the client via socket.
+ *Calculate the distances between this client and all of the
+ *others on the server. Upon completion of the distance processing,
+ *sends the distances as an encrypted vector back to this client
+ *via socket.
  *********************/
-void handle_user(ServerData * sd, ClientLink * sl, int id)
+void calculate_distances(ServerData * sd, ClientLink * sl, int id)
 {
     stringstream stream;
     char * buffer = new char[1025];
     int k;
 
-    cout << "Acquiring encrypted positions" << endl;
-
-    sd->cluster[id].thisLoc.erase(sd->cluster[id].thisLoc.begin(),
-                                    sd->cluster[id].thisLoc.end());
-
-    for (k = 0; k < sd->users; k++)
+    /**Erase previous distances if they exist**/
+    if (sd->cluster[id].theirLocs.size() > 0)
     {
-        send_ack(sl);
-        Ctxt newusr(*sd->cluster[k].thisKey);
-        stream << *sd->cluster[k].thisKey;
-        stream_to_socket(stream, &buffer, sl, 1024);
-        stream.str("");
-        stream.clear();
-
-        socket_to_stream(stream, &buffer, sl, 1024);
-        stream >> newusr;
-        sd->cluster[id].thisLoc.push_back(newusr);
-        stream.str("");
-        stream.clear();
-    }
-
-    send_nak(sl);
-
-    cout << "Encrypted location obtained" << endl;
-
-    /**
-    Send ACK when the ciphertext is acquired.
-    **/
-    if (!send_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
-
-    send_ack(sl);
-
-    sd->cluster[id].theirLocs.erase(sd->cluster[id].theirLocs.begin(),
+        sd->cluster[id].theirLocs.erase(sd->cluster[id].theirLocs.begin(),
                                     sd->cluster[id].theirLocs.end());
+    }
 
     /**
     Get ciphertexts with the correct index from the cluster
@@ -382,7 +367,7 @@ void handle_user(ServerData * sd, ClientLink * sl, int id)
         }
     }
 
-    cout << "Sorted locations got." << endl;
+    cout << "Sorted locations extracted." << endl;
 
     /**
     Generate output ciphertexts for the client
@@ -579,6 +564,20 @@ int write_to_socket(char ** buffer, int blocksize, ClientLink * sl)
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;
+}
+
+/**************
+ *Send update message to client,
+ *so it can continue work.
+ *************/
+void send_server_update(ClientLink * sl)
+{
+    char * buffer = new char[1025];
+    stringstream stream("UPDATED");
+
+    stream_to_socket(stream, &buffer, sl, 1024);
+
+    delete [] buffer;
 }
 
 /*******************************
