@@ -196,16 +196,14 @@ void *handle_client(void *param)
 {
     ClientLink me = *(ClientLink*) param;
     struct timeval timeout;
-    fd_set incoming, outgoing;
+    fd_set incoming, master;
 
     FD_ZERO(&incoming);
-    FD_ZERO(&outgoing);
-    FD_SET(me.sockFD, &incoming);
-    FD_SET(me.sockFD, &outgoing);
+    FD_ZERO(&master);
+    FD_SET(me.sockFD, &master);
+    incoming = master;
 
-    timeout.tv_sec = 5;
-
-    select(me.sockFD + 1, &incoming, &outgoing, NULL, &timeout);
+    select(me.sockFD + 1, &incoming, NULL, NULL, &timeout);
 
     pthread_mutex_lock(&me.server->mutex);
 
@@ -245,6 +243,7 @@ void *handle_client(void *param)
     calculate_distances(me.server, &me, me.thisClient);
 
     pthread_mutex_unlock(&me.server->mutex);
+    pthread_barrier_wait(&me.server->popcap);
 
     /**Final bit of tomfoolery**/
     if (me.thisClient == 0)
@@ -260,6 +259,8 @@ void *handle_client(void *param)
     **/
     while(true)
     {
+        //gettimeofday(&timeout, NULL);
+        timeout.tv_sec = 5;
         if (FD_ISSET(me.sockFD, &incoming))
         {
             cout << "Client " << me.thisClient;
@@ -268,7 +269,7 @@ void *handle_client(void *param)
             pthread_mutex_lock(&me.server->mutex);
 
             cout << "Client " << me.thisClient;
-            cout << " has the mutex." << endl;
+            cout << " has the mutex for uploading their new position." << endl;
 
             get_client_position(me.server, &me, me.thisClient);
             calculate_distances(me.server, &me, me.thisClient);
@@ -292,10 +293,9 @@ void *handle_client(void *param)
             pthread_mutex_lock(&me.server->mutex);
 
             cout << "Client " << me.thisClient;
-            cout << " has the mutex for updating." << endl;
+            cout << " has the mutex for updating their location." << endl;
 
             get_client_position(me.server, &me, me.thisClient);
-            calculate_distances(me.server, &me, me.thisClient);
 
             pthread_mutex_unlock(&me.server->mutex);
 
@@ -303,6 +303,22 @@ void *handle_client(void *param)
             cout << " surrendering mutex:update." << endl;
 
             pthread_barrier_wait(&me.server->popcap);
+
+            pthread_barrier_wait(&me.server->popcap);
+
+            cout << "Client " << me.thisClient;
+            cout << " requesting mutex:update" << endl;
+
+            pthread_mutex_lock(&me.server->mutex);
+
+            cout << "Client " << me.thisClient;
+            cout << " has the mutex for updating distances." << endl;
+
+            calculate_distances(me.server, &me, me.thisClient);
+
+            pthread_mutex_unlock(&me.server->mutex);
+            cout << "Client " << me.thisClient;
+            cout << " surrendering mutex:update" << endl;
         }
     }
 }
