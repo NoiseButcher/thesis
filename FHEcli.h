@@ -64,7 +64,8 @@ int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl);
 bool send_ack(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
-int send_location_socket(UserPackage * upk, ServerLink * sl);
+int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
+                         int y);
 void install_upkg_socket(ServerLink * sl, UserPackage * upk);
 vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk);
 bool await_server_update(ServerLink * sl);

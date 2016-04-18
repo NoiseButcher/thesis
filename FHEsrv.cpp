@@ -224,7 +224,7 @@ void *handle_client(void *param)
     {
         pthread_mutex_unlock(&me.server->mutex);
         pthread_barrier_wait(&me.server->popcap);
-        sleep(2);
+        pthread_barrier_wait(&me.server->popcap);
         pthread_mutex_lock(&me.server->mutex);
     }
 
@@ -238,25 +238,26 @@ void *handle_client(void *param)
         pthread_barrier_wait(&me.server->popcap);
     }
 
+    cout << "Client " << me.thisClient;
+    cout << " entering the mainloop." << endl;
+
     /**
     Primary loop to process client positions.
     **/
     while(true)
     {
-        if (me.thisClient == me.server->currentuser)
+        if (recv_ack(&me))
         {
+            cout << "Client " << me.thisClient;
+            cout << " gunning for the mutex." << endl;
+
             pthread_mutex_lock(&me.server->mutex);
+
+            cout << "Client " << me.thisClient;
+            cout << " has the mutex." << endl;
+
             get_client_position(me.server, &me, me.thisClient);
             calculate_distances(me.server, &me, me.thisClient);
-
-            if (me.server->currentuser == me.server->users)
-            {
-                me.server->currentuser = 0;
-            }
-            else
-            {
-                me.server->currentuser++;
-            }
 
             pthread_mutex_unlock(&me.server->mutex);
         }
@@ -269,7 +270,14 @@ void *handle_client(void *param)
         if (me.server->cluster[me.thisClient].thisLoc.size() !=
             me.server->users)
         {
+            cout << "Client " << me.thisClient;
+            cout << " gunning for the mutex for updating." << endl;
+
             pthread_mutex_lock(&me.server->mutex);
+
+            cout << "Client " << me.thisClient;
+            cout << " has the mutex for updating." << endl;
+
             get_client_position(me.server, &me, me.thisClient);
             pthread_mutex_unlock(&me.server->mutex);
             pthread_barrier_wait(&me.server->popcap);

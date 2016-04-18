@@ -59,7 +59,11 @@ int main(int argc, char * argv[])
 
     cout << "FHE Scheme installed." << endl;
 
-    send_location_socket(&me, &op);
+    cout << "Enter co-ordinates:" << endl;
+
+    pair <int, int> loc = get_gps();
+
+    send_location_socket(&me, &op, loc.first, loc.second);
 
     cout << "First position sent." << endl;
 
@@ -77,8 +81,14 @@ int main(int argc, char * argv[])
 #endif
 
 #ifndef ANDROID
-    while (send_location_socket(&me, &op) == 1)
+    while (true)
     {
+        loc = get_gps();
+
+        send_ack(&op);
+
+        send_location_socket(&me, &op, loc.first, loc.second);
+
         cout << "Location sent." << endl;
 
         //while (!await_server_update(&op));
@@ -92,6 +102,8 @@ int main(int argc, char * argv[])
         display_positions(them, 10);
 
         cout << "Distances decoded." << endl;
+
+        cout << "Enter co-ordinates:" << endl;
 
 #else
     while (send_location_android(&me) == 1)
@@ -121,9 +133,9 @@ pair<int, int> get_gps()
 	int lat, lng;
 	string input;
 
-	cout << "Y";
-	cin >> lat;
 	cout << "X";
+	cin >> lat;
+	cout << "Y";
 	cin >> lng;
 
 	return make_pair(lat, lng);
@@ -333,17 +345,12 @@ int prepare_socket(ServerLink * sl, char * argv[])
  *-Return Enc(n)[x, y] to server
  *Once complete, await ACK from server.
  *************************************/
-int send_location_socket(UserPackage * upk, ServerLink * sl)
+int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
+                         int y)
 {
     stringstream stream;
     char * buffer = new char[1025];
     int k = 0;
-
-#ifdef DEBUG
-    cout << "Enter co-ordinates:" << endl;
-#endif // DEBUG
-
-    pair<int, int> me = get_gps();
 
 #ifdef DEBUG
     cout << "Sending my encrypted position." << endl;
@@ -357,7 +364,7 @@ int send_location_socket(UserPackage * upk, ServerLink * sl)
         stream.str("");
         stream.clear();
         Ctxt output(*pk);
-        output = encrypt_location(me.first, me.second, *pk);
+        output = encrypt_location(x, y, *pk);
         stream << output;
         stream_to_socket(stream, &buffer, sl, 1024);
         stream.str("");
