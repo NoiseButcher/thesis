@@ -1,8 +1,7 @@
 #include "FHEsrv.h"
 #include <sys/resource.h>
 
-#define DEBUG
-#define DEMO
+//#define DEBUG
 /***********************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
@@ -33,15 +32,11 @@ int main(int argc, char * argv[])
 
     generate_scheme(&sd);
 
-#ifdef DEBUG
     cout << "FHE Scheme generated." << endl;
-#endif // DEBUG
 
     prepare_server_socket(&sl, argv);
 
-#ifdef DEBUG
     cout << "Connection open for clients." << endl;
-#endif // DEBUG
 
     sd.currentuser = 0;
     sd.users = 0;
@@ -130,7 +125,9 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     stringstream stream;
     char * buffer = new char[1025];
 
+#ifdef DEBUG
     cout << "Streaming base data..." << endl;
+#endif // DEBUG
 
     writeContextBase(stream, *sd->context);
     stream_to_socket(stream, &buffer, sl, 1024);
@@ -147,7 +144,9 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
 #endif
     }
 
+#ifdef DEBUG
     cout << "Streaming Context..." << endl;;
+#endif // DEBUG
 
     stream << *sd->context;
     stream_to_socket(stream, &buffer, sl, 1024);
@@ -164,13 +163,17 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
 #endif
     }
 
+#ifdef DEBUG
     cout << "Obtaining client public key." << endl;
+#endif // DEBUG
 
     socket_to_stream(stream, &buffer, sl ,1024);
     Cluster cx(*sd->context);
     stream >> *cx.thisKey;
 
+#ifdef DEBUG
     cout << "Appending to Cluster." << endl;
+#endif // DEBUG
 
     sd->cluster.push_back(cx);
     stream.str("");
@@ -192,6 +195,17 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
 void *handle_client(void *param)
 {
     ClientLink me = *(ClientLink*) param;
+    struct timeval timeout;
+    fd_set incoming, outgoing;
+
+    FD_ZERO(&incoming);
+    FD_ZERO(&outgoing);
+    FD_SET(me.sockFD, &incoming);
+    FD_SET(me.sockFD, &outgoing);
+
+    timeout.tv_sec = 5;
+
+    select(me.sockFD + 1, &incoming, &outgoing, NULL, &timeout);
 
     pthread_mutex_lock(&me.server->mutex);
 
@@ -199,8 +213,8 @@ void *handle_client(void *param)
 
     me.server->users++;
 
-    cout << "New Client " << me.thisClient << " Accepted on ";
-    cout << me.sockFD << endl;
+    cout << "New client " << me.thisClient << " accepted on ";
+    cout << me.sockFD << "." << endl;
 
     generate_upkg(me.server, &me);
 
@@ -246,10 +260,10 @@ void *handle_client(void *param)
     **/
     while(true)
     {
-        if (recv_ack(&me))
+        if (FD_ISSET(me.sockFD, &incoming))
         {
             cout << "Client " << me.thisClient;
-            cout << " gunning for the mutex." << endl;
+            cout << " requesting mutex." << endl;
 
             pthread_mutex_lock(&me.server->mutex);
 
@@ -260,6 +274,8 @@ void *handle_client(void *param)
             calculate_distances(me.server, &me, me.thisClient);
 
             pthread_mutex_unlock(&me.server->mutex);
+            cout << "Client " << me.thisClient;
+            cout << " surrendering mutex." << endl;
         }
 
         /**
@@ -271,7 +287,7 @@ void *handle_client(void *param)
             me.server->users)
         {
             cout << "Client " << me.thisClient;
-            cout << " gunning for the mutex for updating." << endl;
+            cout << " requesting mutex: update." << endl;
 
             pthread_mutex_lock(&me.server->mutex);
 
@@ -279,7 +295,13 @@ void *handle_client(void *param)
             cout << " has the mutex for updating." << endl;
 
             get_client_position(me.server, &me, me.thisClient);
+            calculate_distances(me.server, &me, me.thisClient);
+
             pthread_mutex_unlock(&me.server->mutex);
+
+            cout << "Client " << me.thisClient;
+            cout << " surrendering mutex:update." << endl;
+
             pthread_barrier_wait(&me.server->popcap);
         }
     }
@@ -296,7 +318,9 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
     char * buffer = new char[1025];
     int k;
 
+#ifdef DEBUG
     cout << "Acquiring encrypted positions" << endl;
+#endif // DEBUG
 
     /**Erase previous locations if they exist**/
     if (sd->cluster[id].thisLoc.size() > 0)
@@ -328,8 +352,10 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
 
     send_nak(sl);
 
+#ifdef DEBUG
     cout << "Locations for client " << sl->thisClient;
     cout << " loaded." << endl;
+#endif
 
     /**
     Send ACK when the ciphertext is acquired.
@@ -375,8 +401,6 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
         }
     }
 
-    cout << "Sorted locations extracted." << endl;
-
     /**
     Generate output ciphertexts for the client
     **/
@@ -384,7 +408,11 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
                           sd->cluster[id].theirLocs,
                           *sd->cluster[id].thisKey);
 
-    cout << "Output generated" << endl;
+#ifdef DEBUG
+    cout << "Output for client " << sl.thisClient;
+    cout << " generated." << endl;
+#endif // DEBUG
+
     /**
     Push to socket.
     **/
@@ -428,7 +456,9 @@ int generate_scheme(ServerData * sd) {
     sd->context = new FHEcontext(m, p, r);
     buildModChain(*sd->context, L, c);
 
+#ifdef DEBUG
     cout << "Scheme Generation Complete." << endl;
+#endif
 
     return 1;
 }

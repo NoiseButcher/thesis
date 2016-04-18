@@ -1,7 +1,7 @@
 #include "FHEcli.h"
 #include <sys/resource.h>
 
-#define DEBUG
+//#define DEBUG
 //#define ANDROID
 /***********************************
 Client side program to be handled as
@@ -67,10 +67,6 @@ int main(int argc, char * argv[])
 
     cout << "First position sent." << endl;
 
-    //while (!await_server_update(&op));
-
-    //cout << "Server update received." << endl;
-
     them = get_distances_socket(&op, &me);
 
     cout << "First distance calcs:" << endl;
@@ -83,17 +79,13 @@ int main(int argc, char * argv[])
 #ifndef ANDROID
     while (true)
     {
-        loc = get_gps();
+        cout << "Enter co-ordinates:" << endl;
 
-        send_ack(&op);
+        loc = get_gps();
 
         send_location_socket(&me, &op, loc.first, loc.second);
 
         cout << "Location sent." << endl;
-
-        //while (!await_server_update(&op));
-
-        //cout << "Server updated." << endl;
 
         them = get_distances_socket(&op, &me);
 
@@ -102,8 +94,6 @@ int main(int argc, char * argv[])
         display_positions(them, 10);
 
         cout << "Distances decoded." << endl;
-
-        cout << "Enter co-ordinates:" << endl;
 
 #else
     while (send_location_android(&me) == 1)
@@ -161,7 +151,7 @@ Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 
 	pk.getContext().ea->encrypt(cloc, pk, loc);
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Location encrypted." << endl;
 #endif // DEBUG
 
@@ -200,7 +190,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     stringstream ss;
     char * buffer = new char[1025];
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Streaming base from server..." << endl;
 #endif
 
@@ -214,7 +204,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     ss.str("");
     ss.clear();
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Base data streaming complete." << endl;
 #endif
 
@@ -229,7 +219,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
     }
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Streaming context data from server..." << endl;
 #endif
 
@@ -241,7 +231,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     ss.str("");
     ss.clear();
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Context Built." << endl;
 #endif
 
@@ -257,7 +247,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Client FHE scheme Generated." << endl;
 #endif
 
@@ -269,7 +259,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
     }
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Streaming my public key to the server." << endl;
 #endif
 
@@ -289,7 +279,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 #endif
     }
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Preliminary install complete." << endl;
 #endif
 
@@ -352,7 +342,7 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
     char * buffer = new char[1025];
     int k = 0;
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << "Sending my encrypted position." << endl;
 #endif // DEBUG
 
@@ -373,7 +363,7 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
         k++;
     }
 
-#ifdef DEBUG
+#ifndef ANDROID
     cout << k << " positions transferred." << endl;
 #endif // DEBUG
 
@@ -639,7 +629,7 @@ void install_upkg_android(UserPackage * upk)
     }
     while (cin.gcount() == 1024);
 
-    //Generate my key pair and switching matrix.
+    /**Generate my key pair and switching matrix.**/
     upk->secretKey = new FHESecKey(*upk->context);
     upk->publicKey = upk->secretKey;
     upk->G = upk->context->alMod.getFactorsOverZZ()[0];
