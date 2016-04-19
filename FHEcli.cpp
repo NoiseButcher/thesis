@@ -83,6 +83,8 @@ int main(int argc, char * argv[])
 
         loc = get_gps();
 
+        send_ack(&op);
+
         send_location_socket(&me, &op, loc.first, loc.second);
 
         cout << "Location sent." << endl;

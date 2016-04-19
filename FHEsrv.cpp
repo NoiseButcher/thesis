@@ -196,14 +196,8 @@ void *handle_client(void *param)
 {
     ClientLink me = *(ClientLink*) param;
     struct timeval timeout;
-    fd_set incoming, master;
-
-    FD_ZERO(&incoming);
-    FD_ZERO(&master);
-    FD_SET(me.sockFD, &master);
-    incoming = master;
-
-    select(me.sockFD + 1, &incoming, NULL, NULL, &timeout);
+    fd_set incoming;
+    fd_set master;
 
     pthread_mutex_lock(&me.server->mutex);
 
@@ -259,10 +253,16 @@ void *handle_client(void *param)
     **/
     while(true)
     {
-        //gettimeofday(&timeout, NULL);
-        timeout.tv_sec = 5;
+        FD_ZERO(&incoming);
+        FD_ZERO(&master);
+        timeout.tv_sec = 10;
+        FD_SET(me.sockFD, &master);
+        incoming = master;
+        select(me.sockFD + 1, &incoming, NULL, NULL, &timeout);
+
         if (FD_ISSET(me.sockFD, &incoming))
         {
+            recv_ack(&me);
             cout << "Client " << me.thisClient;
             cout << " requesting mutex." << endl;
 
@@ -278,6 +278,11 @@ void *handle_client(void *param)
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex." << endl;
         }
+        else
+        {
+            cout << "Client " << me.thisClient;
+            cout << " user input timeout." << endl;
+        }
 
         /**
         Test the size of this client's location vector
@@ -287,6 +292,8 @@ void *handle_client(void *param)
         if (me.server->cluster[me.thisClient].thisLoc.size() !=
             me.server->users)
         {
+            recv_ack(&me);
+
             cout << "Client " << me.thisClient;
             cout << " requesting mutex: update." << endl;
 
