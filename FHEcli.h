@@ -54,7 +54,7 @@ ALL MODE FUNCTIONS
 **/
 pair<int, int> get_gps();
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk);
-void display_positions(vector<long> d, int limit);
+void display_positions(vector<long> d);
 
 /**
 SOCKET FUNCTIONS
@@ -68,18 +68,8 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
                          int y);
 void install_upkg_socket(ServerLink * sl, UserPackage * upk);
 vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk);
-bool await_server_update(ServerLink * sl);
 void stream_to_socket(istream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);
 void socket_to_stream(ostream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);
-
-/**
-ANDROID FUNCTIONS
-**/
-void install_upkg_android(UserPackage * upk);
-int send_location_android(UserPackage * upk);
-vector<long> get_distances_android(UserPackage * upk);
-bool recv_ack_android();
-bool send_ack_android();
 #endif

@@ -2,7 +2,6 @@
 #include <sys/resource.h>
 
 //#define DEBUG
-//#define ANDROID
 /***********************************
 Client side program to be handled as
 a stand alone executable.
@@ -43,7 +42,6 @@ int main(int argc, char * argv[])
         return 0;
     }
 
-#ifndef ANDROID
     /**
     Connect to the server or throw an error if it can't.
     **/
@@ -71,12 +69,8 @@ int main(int argc, char * argv[])
 
     cout << "First distance calcs:" << endl;
 
-    display_positions(them, 10);
-#else
-    install_upkg_android(&me);
-#endif
+    display_positions(them);
 
-#ifndef ANDROID
     while (true)
     {
         cout << "Enter co-ordinates:" << endl;
@@ -93,26 +87,15 @@ int main(int argc, char * argv[])
 
         cout << "Distances received." << endl;
 
-        display_positions(them, 10);
+        display_positions(them);
 
         cout << "Distances decoded." << endl;
-
-#else
-    while (send_location_android(&me) == 1)
-    {
-        if (recv_ack_android())
-        {
-            them = get_distances_android(&me);
-            display_positions(them, 10);
-        }
-#endif // ANDROID
     }
 
     return 0;
 }
 
 /*********LOGISTICS AND FHE FUNCTIONS***********/
-/***********ALL MODES***************************/
 /***************************
  *This function expects the
  *latitude and longitude of
@@ -153,9 +136,7 @@ Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 
 	pk.getContext().ea->encrypt(cloc, pk, loc);
 
-#ifndef ANDROID
     cout << "Location encrypted." << endl;
-#endif // DEBUG
 
 	return cloc;
 }
@@ -166,10 +147,10 @@ Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
  *to primary I/O, so only
  *one mode.
  **********************/
-void display_positions(vector<long> d, int limit)
+void display_positions(vector<long> d)
 {
     int i;
-    //for (i=0; i < limit; i++)
+
     do
     {
         cout << "User " << i << " is ";
@@ -192,9 +173,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     stringstream ss;
     char * buffer = new char[1025];
 
-#ifndef ANDROID
     cout << "Streaming base from server..." << endl;
-#endif
 
     /**
     Stream in the context base to a local file. Where it
@@ -206,24 +185,14 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     ss.str("");
     ss.clear();
 
-#ifndef ANDROID
     cout << "Base data streaming complete." << endl;
-#endif
 
     upk->context = new FHEcontext(upk->m, upk->p, upk->r,
                                   upk->gens, upk->ords);
 
-    if (!send_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
+    send_ack(sl);
 
-#ifndef ANDROID
     cout << "Streaming context data from server..." << endl;
-#endif
 
     /**
     Stream in the context in blocks of 1KB.
@@ -233,9 +202,7 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     ss.str("");
     ss.clear();
 
-#ifndef ANDROID
     cout << "Context Built." << endl;
-#endif
 
     /**
     Generate client's private and public key pair,
@@ -249,21 +216,11 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
 
-#ifndef ANDROID
     cout << "Client FHE scheme Generated." << endl;
-#endif
 
-    if (!send_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
+    send_ack(sl);
 
-#ifndef ANDROID
     cout << "Streaming my public key to the server." << endl;
-#endif
 
     ss << *upk->publicKey;
     stream_to_socket(ss, &buffer, sl ,1024);
@@ -273,17 +230,9 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     /**
     Wait for ACK.
     **/
-    if (!recv_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error, no ACK." << endl;
-        exit(0);
-#endif
-    }
+    recv_ack(sl);
 
-#ifndef ANDROID
     cout << "Preliminary install complete." << endl;
-#endif
 
     delete [] buffer;
 }
@@ -344,9 +293,7 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
     char * buffer = new char[1025];
     int k = 0;
 
-#ifndef ANDROID
     cout << "Sending my encrypted position." << endl;
-#endif // DEBUG
 
     while (recv_ack(sl))
     {
@@ -365,17 +312,9 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
         k++;
     }
 
-#ifndef ANDROID
     cout << k << " positions transferred." << endl;
-#endif // DEBUG
 
-    if (!recv_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error, no ACK." << endl;
-        exit(0);
-#endif
-    }
+    recv_ack(sl);
 
     delete [] buffer;
 
@@ -402,46 +341,12 @@ vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk)
     stream.str("");
     stream.clear();
 
-    if (!send_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
-        exit(0);
-#endif
-    }
+    send_ack(sl);
 
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
 
     delete [] buffer;
     return d;
-}
-
-/*****************
- *Function to sit on the port when new a new user
- *connects to the system. Once this client's position has
- *been uploaded, each other client must encrypt their own with
- *this new public key.
- *****************/
-bool await_server_update(ServerLink * sl)
-{
-    char * buffer = new char[7];
-    char * refbuf = new char[7];
-    string n = "UPDATED";
-    refbuf = &n[0];
-
-    cout << refbuf << endl;
-
-    stream_from_socket(&buffer, sizeof(buffer), sl);
-    if (strcmp(buffer, refbuf) == 0)
-    {
-        delete [] buffer;
-        delete [] refbuf;
-        return true;
-    }
-
-    delete [] buffer;
-    delete [] refbuf;
-    return false;
 }
 
 /*****
@@ -600,107 +505,4 @@ void socket_to_stream(ostream &stream, char ** buffer,
         cout << totalloops << " : " << rx;
         cout << " : " << stream.tellp() << endl;
 #endif // DEBUG
-}
-
-/*************ANDROID FUNCTIONS***************/
-/*******************
- *Android mode install.
- *Reads from standard i/o.
- *******************/
-void install_upkg_android(UserPackage * upk)
-{
-    stringstream stream;
-    char * buffer = new char[1025];
-
-    readContextBase(cin, upk->m, upk->p, upk->r,
-                    upk->gens, upk->ords);
-    upk->context = new FHEcontext(upk->m, upk->p, upk->r,
-                                  upk->gens, upk->ords);
-
-    send_ack_android();
-
-    do
-    {
-        cin.getline(buffer, 1024);
-        stream << buffer;
-        stream >> *upk->context;
-
-        bzero(buffer, sizeof(buffer));
-        stream.str("");
-        stream.clear();
-    }
-    while (cin.gcount() == 1024);
-
-    /**Generate my key pair and switching matrix.**/
-    upk->secretKey = new FHESecKey(*upk->context);
-    upk->publicKey = upk->secretKey;
-    upk->G = upk->context->alMod.getFactorsOverZZ()[0];
-    upk->secretKey->GenSecKey(64);
-    addSome1DMatrices(*upk->secretKey);
-    upk->ea = new EncryptedArray(*upk->context, upk->G);
-    upk->nslots = upk->ea->size();
-
-    send_ack_android();
-
-    delete [] buffer;
-}
-
-/*****************
- *Actually make this please.
- *****************/
-int send_location_android(UserPackage * upk)
-{
-    return 1;
-}
-
-/***********************
- *Android mode distance recovery.
- **********************/
-vector<long> get_distances_android(UserPackage * upk)
-{
-    vector<long> d;
-    stringstream stream;
-    Ctxt encrypted_distances(*upk->publicKey);
-    char * buffer = new char[1024];
-
-    do
-    {
-        cin.getline(buffer, 1024);
-        stream << buffer;
-        stream >> encrypted_distances;
-
-        bzero(buffer, sizeof(buffer));
-        stream.str("");
-        stream.clear();
-    }
-    while(cin.gcount() == 1024);
-
-    cout << "ACK" << endl;
-
-    upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
-
-    delete [] buffer;
-    return d;
-}
-
-/****************
- *Android ACK check
- *for standard in.
- ****************/
-bool recv_ack_android()
-{
-    string ack;
-    cin >> ack;
-    if (ack == "ACK") {
-        return true;
-    }
-    return false;
-}
-
-/****************
- *Thy is this even a function.
- ****************/
-bool send_ack_android()
-{
-    cout << "ACK";
 }
