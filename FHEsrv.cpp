@@ -16,7 +16,6 @@ int main(int argc, char * argv[])
     ServerData sd;
     ServerLink sl;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
-    sd.myturn = PTHREAD_COND_INITIALIZER;
 
     /**
     Argument check... just in case...
@@ -38,7 +37,6 @@ int main(int argc, char * argv[])
 
     cout << "Connection open for clients." << endl;
 
-    sd.currentuser = 0;
     sd.users = 0;
 
     while (true)
@@ -109,7 +107,6 @@ int main(int argc, char * argv[])
     **/
     pthread_barrier_destroy(&sd.popcap);
     pthread_mutex_destroy(&sd.mutex);
-    pthread_cond_destroy(&sd.myturn);
 
     return 0;
 }
@@ -260,30 +257,6 @@ void *handle_client(void *param)
         incoming = master;
         select(me.sockFD + 1, &incoming, NULL, NULL, &timeout);
 
-        if (FD_ISSET(me.sockFD, &incoming))
-        {
-            recv_ack(&me);
-            cout << "Client " << me.thisClient;
-            cout << " requesting mutex." << endl;
-
-            pthread_mutex_lock(&me.server->mutex);
-
-            cout << "Client " << me.thisClient;
-            cout << " has the mutex for uploading their new position." << endl;
-
-            get_client_position(me.server, &me, me.thisClient);
-            calculate_distances(me.server, &me, me.thisClient);
-
-            pthread_mutex_unlock(&me.server->mutex);
-            cout << "Client " << me.thisClient;
-            cout << " surrendering mutex." << endl;
-        }
-        else
-        {
-            cout << "Client " << me.thisClient;
-            cout << " user input timeout." << endl;
-        }
-
         /**
         Test the size of this client's location vector
         vs the amount of users on the server, and see if it
@@ -326,6 +299,30 @@ void *handle_client(void *param)
             pthread_mutex_unlock(&me.server->mutex);
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex:update" << endl;
+        }
+
+        if (FD_ISSET(me.sockFD, &incoming))
+        {
+            recv_ack(&me);
+            cout << "Client " << me.thisClient;
+            cout << " requesting mutex." << endl;
+
+            pthread_mutex_lock(&me.server->mutex);
+
+            cout << "Client " << me.thisClient;
+            cout << " has the mutex for uploading their new position." << endl;
+
+            get_client_position(me.server, &me, me.thisClient);
+            calculate_distances(me.server, &me, me.thisClient);
+
+            pthread_mutex_unlock(&me.server->mutex);
+            cout << "Client " << me.thisClient;
+            cout << " surrendering mutex." << endl;
+        }
+        else
+        {
+            cout << "Client " << me.thisClient;
+            cout << " user input timeout." << endl;
         }
     }
 }

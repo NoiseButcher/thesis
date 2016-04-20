@@ -64,10 +64,8 @@ struct ServerData {
 	vector<Cluster> cluster;
 	vector<pthread_t> threadID;
     int users;
-	int currentuser;
 	int maxthreads;
 	pthread_mutex_t mutex;
-	pthread_cond_t myturn;
 	pthread_barrier_t popcap;
 };
 

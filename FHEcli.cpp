@@ -85,11 +85,9 @@ int main(int argc, char * argv[])
 
         them = get_distances_socket(&op, &me);
 
-        cout << "Distances received." << endl;
+        cout << "Distances received:" << endl;
 
         display_positions(them);
-
-        cout << "Distances decoded." << endl;
     }
 
     return 0;
