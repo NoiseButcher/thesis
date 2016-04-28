@@ -131,15 +131,9 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     stream.str("");
     stream.clear();
 
-    cout << "Base File streaming complete." << endl;
+    recv_ack(sl);
 
-    if (!recv_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error, no ACK." << endl;
-        exit(0);
-#endif
-    }
+    cout << "Base File streaming complete." << endl;
 
 #ifdef DEBUG
     cout << "Streaming Context..." << endl;;
@@ -150,15 +144,9 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     stream.str("");
     stream.clear();
 
-    cout << "Context Stream Complete." << endl;
+    recv_ack(sl);
 
-    if (!recv_ack(sl))
-    {
-#ifdef DEBUG
-        cout << "Socket buffer error, no ACK." << endl;
-        exit(0);
-#endif
-    }
+    cout << "Context Stream Complete." << endl;
 
 #ifdef DEBUG
     cout << "Obtaining client public key." << endl;

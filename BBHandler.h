@@ -2,8 +2,11 @@
 #define BBHANDLER_H
 
 #include <unistd.h>
+#include <NTL/lzz_pXFactoring.h>
+#include <NTL/matrix.h>
+#include "FHE.h"
+#include "EncryptedArray.h"
 #include <stdlib.h>
-#include <argp.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -14,6 +17,7 @@
 #include <math.h>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 
 /**********
  *Data structure to handle server connections.
@@ -32,8 +36,16 @@ struct ServerLink
 /**
 ALL MODE FUNCTIONS
 **/
-pair<int, int> get_gps();
-void display_positions(vector<long> d);
+void get_gps_handler(int infd, int outfd, char ** buffer,
+                       int blocksize);
+void display_positions_handler(int infd, int outfd, char ** buffer,
+                               int blocksize);
+void install_upkg_handler(int infd, int outfd, char ** buffer,
+                          ServerLink * sl, int blocksize);
+void send_location_handler(int infd, int outfd, char ** buffer,
+                          ServerLink * sl, int blocksize);
+void get_distance_handler(int infd, int outfd, char ** buffer,
+                          ServerLink * sl, int blocksize);
 
 /**
 COMMUNICATION FUNCTIONS
@@ -45,12 +57,14 @@ void handler_to_socket(istream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);
 void socket_to_handler(ostream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);
-void handler_to_pipe(istream &stream, int fd, char** buffer,
-                     int blocksize);
-void pipe_to_handler(ostream &stream, int fd, char ** buffer,
-                     int blocksize);
-void pipe_to_socket(int fd, char ** buffer, ServerLink * sl,
-                    int blocksize);
-void socket_to_pipe((int fd, char ** buffer, ServerLink * sl,
-                    int blocksize);
+void handler_to_pipe(istream &stream, int infd, int outfd,
+                     char** buffer, int blocksize);
+void pipe_to_handler(ostream &stream, int infd, int outfd,
+                     char ** buffer, int blocksize);
+void pipe_to_socket(int infd, int outfd, char ** buffer,
+                    ServerLink * sl, int blocksize);
+void socket_to_pipe(int infd, int outfd, char ** buffer,
+                    ServerLink * sl, int blocksize);
+bool send_ack_pipe(int infd);
+bool recv_ack_pipe(int outfd);
 #endif

@@ -1,7 +1,7 @@
 #include "BBHandler.h"
 #include <sys/resource.h>
 
-//#define DEBUG
+#define DEBUG
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
@@ -19,9 +19,8 @@ int main(int argc, char * argv[])
     pid_t blackbox;
     int bb_in[2];
     int bb_out[2];
-    pair <int, int> me;
-    stringstream cmd;
     char * buffer = new char[1025];
+    stringstream stream;
 
     /**
     Check input arguments.
@@ -43,25 +42,40 @@ int main(int argc, char * argv[])
     if (blackbox == 0)
     {
         /**Make cin pipe directly to the parent**/
-        //close(0);
-        dup2(bb_in[0], 0);
-        close(bb_in[0]);
-        close(bb_in[1]);
+        close(0);
+        if ((dup2(bb_in[0], 0) != 0) ||
+            (close(bb_in[0]) != 0) ||
+            (close(bb_in[1]) != 0))
+        {
+            cerr << "OH MY GOD THEY ARE COMING FROM CIN!!" << endl;
+            exit(0);
+        }
+
 
         /**Make cout pipe directly to the parent**/
-        //close(1);
-        dup2(bb_out[1], 1);
-        close(bb_out[0]);
-        close(bb_out[1]);
+        close(1);
+        if ((dup2(bb_out[1], 1) != 1) ||
+            (close(bb_out[0]) != 0) ||
+            (close(bb_out[1]) != 0))
+        {
+            cerr << "OH MY GOD THEY ARE COMING FROM COUT!!" << endl;
+            exit(0);
+        }
 
         /**Run the black box **/
-        execl("~/Thesis/Guy_Code/FHBB_x", "FHBB_x", (char*) 0);
+        execl("/home/sharky/Thesis/Guy_Code/FHBB_x", "FHBB_x", NULL);
+
+        cout << "Execution failure." << endl;
 
         return 1;
     }
     /**I AM YOUR FUCKING DADDY**/
     else
     {
+        close(bb_out[1]);
+        close(bb_in[0]);
+        bzero(buffer, sizeof(buffer));
+
         /**
         Connect to the server or throw an error if it can't.
         **/
@@ -71,51 +85,71 @@ int main(int argc, char * argv[])
             return 0;
         }
 
-        cout << "Connection Established." << endl;
+#ifdef DEBUG
+        cout << "Connection Established on fd: " << op.sockFD << endl;
+        cout << "FHBB input on fd: " << bb_in[1] << endl;
+        cout << "FHBB output on fd: " << bb_out[0] << endl;
+#else
+        cout << "Let's measure some shit." << endl;
+#endif // DEBUG
 
-        close(bb_out[1]);
-        close(bb_in[0]);
-        bzero(buffer, sizeof(buffer));
-        cmd.str("");
-        cmd.clear();
+        stream.str("Testu");
+        handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
+        stream.str("");
+        stream.clear();
+        pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
+        cerr << "Test message: " << stream.str() << endl;
+        stream.str("");
+        stream.clear();
 
-        cout << "Ready to test FHBB." << endl;
+        install_upkg_handler(bb_in[1], bb_out[0], &buffer,
+                             &op, 1024);
 
-        pipe_to_handler(cmd, bb_out[0], &buffer, 1024);
+        get_gps_handler(bb_in[1], bb_out[0], &buffer, 1024);
 
-        //Get Base
-        socket_to_pipe(bb_in[1], &buffer, &op, 1024);
-        //Send ack
-        pipe_to_socket(bb_out[0], &buffer, &op, 1024);
-        //Get context
-        socket_to_pipe(bb_in[1], &buffer, &op, 1024);
-        //Send ack
-        pipe_to_socket(bb_out[0], &buffer, &op, 1024);
-        //Send my public key
-        pipe_to_socket(bb_out[0], &buffer, &op, 1024);
-        //Send ack
+        send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
+                              1024);
 
+        get_distance_handler(bb_in[1], bb_out[0], &buffer, &op,
+                             1024);
 
-        me = get_gps();
-        /*SEND LOCATION*/
-        /*RECEIVE DISTANCES*/
-        /*PRINT THE FUCKERS*/
+        display_positions_handler(bb_in[1], bb_out[0], &buffer, 1024);
 
         while(true)
         {
-            me = get_gps();
-            /*WRITE ACK*/
-            /*SEND LOCATION*/
-            /*RECEIVE DISTANCES*/
-            /*PRINT THE FUCKERS*/
+            get_gps_handler(bb_in[1], bb_out[0], &buffer, 1024);
+
+            /**Pipe ACK from black box to handler**/
+            pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
+
+            /**Check contents of transfer**/
+            cout << stream.str() << " for GPS." << endl;
+
+            /**Pipe ACK from handler to server**/
+            handler_to_socket(stream, &buffer, &op, 1024);
+
+            /**Clear stream buffer**/
+            stream.str("");
+            stream.clear();
+
+            send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
+                              1024);
+
+            get_distance_handler(bb_in[1], bb_out[0], &buffer,
+                                 &op, 1024);
+
+            display_positions_handler(bb_in[1], bb_out[0], &buffer,
+                                      1024);
         }
 
+        close(bb_out[0]);
+        close(bb_in[1]);
     }
 
     return 0;
 }
 
-/*********LOGISTICS AND FHE FUNCTIONS***********/
+/*********LOGISTICS FUNCTIONS***********/
 /***************************
  *This function expects the
  *latitude and longitude of
@@ -123,17 +157,30 @@ int main(int argc, char * argv[])
  *by 1000.
  *As it is an integer there is no decimal precision.
  **************************/
-pair<int, int> get_gps()
+void get_gps_handler(int infd, int outfd, char ** buffer,
+                       int blocksize)
 {
-	int lat, lng;
-	string input;
-
-	cout << "X";
-	cin >> lat;
-	cout << "Y";
-	cin >> lng;
-
-	return make_pair(lat, lng);
+    stringstream stream;
+    string input;
+    cout << "Enter a position." << endl;
+    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
+    cout << stream.str() << endl; //should be "X"
+    stream.str("");
+    stream.clear();
+    cin >> input;
+    stream << input;
+    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+    stream.str("");
+    stream.clear();
+    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
+    cout << stream.str() << endl; //should be "Y"
+    stream.str("");
+    stream.clear();
+    cin >> input;
+    stream << input;
+    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+    stream.str("");
+    stream.clear();
 }
 
 /*********************
@@ -142,18 +189,137 @@ pair<int, int> get_gps()
  *to primary I/O, so only
  *one mode.
  **********************/
-void display_positions(vector<long> d)
+void display_positions_handler(int infd, int outfd, char ** buffer,
+                               int blocksize)
 {
-    int i;
+    stringstream stream;
 
-    do
+    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
+    cout << stream.str() << endl;
+
+}
+
+/**********************************
+ *Install the FHE scheme to the black
+ *box binary. Serious plumbing happens here.
+ *The ACK between the server and client is printed
+ *from the interface so that the debugging
+ *can be easily followed up.
+ *********************************/
+void install_upkg_handler(int infd, int outfd, char ** buffer,
+                          ServerLink * sl, int blocksize)
+{
+    stringstream stream;
+
+#ifdef DEBUG
+    socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Base
+
+    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
+
+    cerr << stream.str() << " Base." << endl;
+
+    handler_to_socket(stream, buffer, sl, blocksize);
+    stream.str("");
+    stream.clear();
+
+    socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Context
+
+    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
+
+    cerr << stream.str() << " Context." << endl;
+
+    handler_to_socket(stream, buffer, sl, blocksize);
+    stream.str("");
+    stream.clear();
+
+    pipe_to_socket(infd, outfd, buffer, sl, blocksize); //Public Key
+
+    socket_to_handler(stream, buffer, sl, blocksize);
+
+    cout << stream.str() << " Public Key." << endl;
+
+    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+    stream.str("");
+    stream.clear();
+
+#else
+    socket_to_pipe(infd, buffer, sl, blocksize); //Base
+    pipe_to_socket(outfd, buffer, sl, blocksize); //send ACK
+    socket_to_pipe(infd, buffer, sl, blocksize); //Context
+    pipe_to_socket(outfd, buffer, sl, blocksize); //send ACK
+    pipe_to_socket(outfd, buffer, sl, blocksize); //Public Key
+    socket_to_pipe(infd, buffer, sl, blocksize); //get ACK
+#endif
+}
+
+/*********************************
+ *Middle-man location streaming function.
+ *The ACK is received by the handler, whereas all of the other
+ *data is piped directly from the socket to the black box.
+ **********************************/
+void send_location_handler(int infd, int outfd, char ** buffer,
+                          ServerLink * sl, int blocksize)
+{
+    stringstream stream;
+
+    /**Pipe ACK from server to handler**/
+    socket_to_handler(stream, buffer, sl, blocksize);
+
+    while (stream.str() == "ACK")
     {
-        cout << "User " << i << " is ";
-        cout << sqrt(d[i]) << "m ";
-        cout << "from your position." << endl;
-        i++;
+        /**Pipe ACK from handler to black box**/
+        handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+        /**Clear stream buffer**/
+        stream.str("");
+        stream.clear();
+        /**Pipe a Public Key from server to black box**/
+        socket_to_pipe(infd, outfd, buffer, sl, blocksize);
+        /**Pipe the corresponding encrypted location to server**/
+        pipe_to_socket(infd, outfd, buffer, sl, blocksize);
+        /**Pipe ACK from server to handler**/
+        socket_to_handler(stream, buffer, sl, blocksize);
     }
-    while (d[i] > 0);
+
+    /**Pipe NAK from handler to black box**/
+    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+    /**Clear stream buffer**/
+    stream.str("");
+    stream.clear();
+
+    /**Pipe ACK from server to handler**/
+    socket_to_handler(stream, buffer, sl, blocksize);
+    /**Pipe ACK from handler to black box**/
+    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+    /**Clear stream buffer**/
+    stream.str("");
+    stream.clear();
+}
+
+/************************************
+ *Pipes the encrypted distances between the server and the
+ *black box so that they can be decrypted.
+ **********************************/
+void get_distance_handler(int infd, int outfd, char ** buffer,
+                          ServerLink * sl, int blocksize)
+{
+    stringstream stream;
+
+    /**Get those encrypted distances**/
+    socket_to_pipe(infd, outfd, buffer, sl, blocksize);
+
+    /**Pipe ACK from black box to handler**/
+    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
+
+    /**Check contents of transfer**/
+    cout << stream.str() << " Context." << endl;
+
+    /**Pipe ACK from handler to server**/
+    handler_to_socket(stream, buffer, sl, blocksize);
+
+    /**Clear stream buffer**/
+    stream.str("");
+    stream.clear();
+
 }
 
 /*******************COMMUNICATION FUNCTIONS************************/
@@ -238,30 +404,16 @@ void handler_to_socket(istream &stream, char ** buffer,
     bzero(*buffer, sizeof(*buffer));
     int k;
 
-#ifdef DEBUG
-    int tx, totalloops;
-    totalloops = 0;
-    tx = 0;
-#endif
-
     do
     {
         k = 0;
         stream.read(*buffer, blocksize);
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
-
-#ifdef DEBUG
-        tx += k;
-        totalloops++;
-#endif // DEBUG
+        bzero(*buffer, sizeof(*buffer));
 
     }
     while (k == blocksize);
-
-#ifdef DEBUG
-        cout << totalloops << " : " << tx << endl;
-#endif // DEBUG
 }
 
 /******************************
@@ -275,32 +427,15 @@ void socket_to_handler(ostream &stream, char ** buffer,
     bzero(*buffer, sizeof(*buffer));
     int k;
 
-#ifdef DEBUG
-    int rx, totalloops;
-    totalloops = 0;
-    rx = 0;
-#endif
-
     do
     {
         k = 0;
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
-
-#ifdef DEBUG
-        rx += k;
-        totalloops++;
-#endif // DEBUG
-
+        bzero(*buffer, sizeof(*buffer));
     }
     while (k == blocksize);
-
     stream.clear();
-
-#ifdef DEBUG
-        cout << totalloops << " : " << rx;
-        cout << " : " << stream.tellp() << endl;
-#endif // DEBUG
 }
 
 /*****************************
@@ -308,9 +443,10 @@ void socket_to_handler(ostream &stream, char ** buffer,
  *one block at a time.
  *Use this to communicate between handler and FHBB.
  ****************************/
-void handler_to_pipe(istream &stream, int fd, char** buffer,
-                     int blocksize)
+void handler_to_pipe(istream &stream, int infd, int outfd,
+                     char** buffer, int blocksize)
 {
+
     bzero(*buffer, sizeof(*buffer));
     int x;
 
@@ -319,8 +455,18 @@ void handler_to_pipe(istream &stream, int fd, char** buffer,
         x = 0;
         stream.read(*buffer, blocksize);
         x = stream.gcount();
-        write(fd, *buffer, blocksize);
+        write(infd, *buffer, x);
+
+        cerr << *buffer << " : to FHBB from handler." << endl;
+
         bzero(*buffer, sizeof(*buffer));
+        *buffer[0] = '\n';
+        *buffer[1] = '\0';
+        write(infd, *buffer, 2);
+        bzero(*buffer, sizeof(*buffer));
+
+        recv_ack_pipe(outfd);
+        cerr << "for handler." << endl;
     }
     while (x == blocksize);
 }
@@ -329,8 +475,8 @@ void handler_to_pipe(istream &stream, int fd, char** buffer,
  *Read from a pipe and place data into a stream buffer
  *Use this to communicate between handler and FHBB.
  ******************/
-void pipe_to_handler(ostream &stream, int fd, char ** buffer,
-                     int blocksize)
+void pipe_to_handler(ostream &stream, int infd, int outfd,
+                     char ** buffer, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
@@ -338,9 +484,13 @@ void pipe_to_handler(ostream &stream, int fd, char ** buffer,
     do
     {
         x = 0;
-        x = read(fd, *buffer, blocksize);
-        stream.write(*buffer, blocksize);
+        x = read(outfd, *buffer, blocksize);
+        stream.write(*buffer, x);
+
+        cerr << *buffer << " : from FHBB to handler." << endl;
+
         bzero(*buffer, sizeof(*buffer));
+        //send_ack_pipe(infd);
     }
     while (x == blocksize);
 
@@ -352,8 +502,8 @@ void pipe_to_handler(ostream &stream, int fd, char ** buffer,
  *not preserve any data for the handler to see. But it is a
  *bajillion times more space efficient,
  *******************/
-void pipe_to_socket(int fd, char ** buffer, ServerLink * sl,
-                    int blocksize)
+void pipe_to_socket(int infd, int outfd, char ** buffer,
+                    ServerLink * sl, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
@@ -362,10 +512,13 @@ void pipe_to_socket(int fd, char ** buffer, ServerLink * sl,
     {
         /**Read pipe data**/
         x = 0;
-        x = read(fd, *buffer, blocksize);
-        /**Send it to socket**/
+        x = read(outfd, *buffer, blocksize);
         write_to_socket(buffer, x, sl);
+
+        cerr << *buffer << " : from FHBB to socket." << endl;
+
         bzero(*buffer, sizeof(*buffer));
+        //send_ack_pipe(infd);
     }
     while (x == blocksize);
 }
@@ -373,20 +526,86 @@ void pipe_to_socket(int fd, char ** buffer, ServerLink * sl,
 /************************
  *Direct line between server socket and FHBB.
  ***********************/
-void socket_to_pipe((int fd, char ** buffer, ServerLink * sl,
-                    int blocksize)
+void socket_to_pipe(int infd, int outfd, char ** buffer,
+                    ServerLink * sl, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
+    int z;
 
     do
     {
         /**Get socket data into buffer**/
         x = 0;
         x = stream_from_socket(buffer, blocksize, sl);
-        /**Write buffer to pipe**/
-        write(fd, *buffer, x);
+        write(infd, *buffer, x);
+
+        cerr << *buffer << " : to FHBB from socket." << endl;
+
         bzero(*buffer, sizeof(*buffer));
+        *buffer[0] = '\n';
+        *buffer[1] = '\0';
+        write(infd, *buffer, 2);
+        bzero(*buffer, sizeof(*buffer));
+
+        recv_ack_pipe(outfd);
+        cerr << "for socket." << endl;
     }
     while (x == blocksize);
+}
+
+/*****************
+ *Send ACK to the pipe.
+ *****************/
+bool send_ack_pipe(int infd)
+{
+    char * ack = new char[4];
+    ack[0] = 'A';
+    ack[1] = 'C';
+    ack[2] = 'K';
+    ack[3] = '\n';
+    //ack[4] = '\0';
+    if (write(infd, ack, sizeof(ack)) == sizeof(ack))
+    {
+        cerr << ack << " sent." << endl;
+        delete [] ack;
+        sleep(0.1);
+        return true;
+    }
+    else
+    {
+        cerr << "OH MY GOD THEY ARE IN THE PIPES!" << endl;
+        return false;
+    }
+}
+
+/*************
+ *Get ACK from the pipe
+ ************/
+bool recv_ack_pipe(int outfd)
+{
+    char * ack = new char[4];
+    char * chk = new char[4];
+    ack[0] = 'A';
+    ack[1] = 'C';
+    ack[2] = 'K';
+    ack[3] = '\0';
+    bzero(chk, sizeof(chk));
+    read(outfd, chk, 4);
+    chk[3] = '\0';
+    if (strcmp(ack, chk) == 0)
+    {
+        cerr << chk << " got ";
+        sleep(0.1);
+        delete [] ack;
+        delete [] chk;
+        return true;
+    }
+    else
+    {
+        cerr << chk << " OH MY GOD THEY ARE IN THE PIPES!" << endl;
+        delete [] ack;
+        delete [] chk;
+        return false;
+    }
 }

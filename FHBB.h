@@ -7,7 +7,6 @@
 #include "FHE.h"
 #include "EncryptedArray.h"
 #include <stdlib.h>
-#include <argp.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -46,7 +45,7 @@ void display_positions(vector<long> d);
 ANDROID FUNCTIONS
 **/
 void install_upkg_android(UserPackage * upk);
-int send_location_android(UserPackage * upk);
+int send_location_android(UserPackage * upk, int x, int y);
 vector<long> get_distances_android(UserPackage * upk);
 bool recv_ack_android();
 bool send_ack_android();
