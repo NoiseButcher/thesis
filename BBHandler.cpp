@@ -20,6 +20,7 @@ int main(int argc, char * argv[])
     int bb_in[2];
     int bb_out[2];
     char * buffer = new char[1025];
+    bzero(buffer, sizeof(buffer));
     stringstream stream;
 
     /**
@@ -74,7 +75,6 @@ int main(int argc, char * argv[])
     {
         close(bb_out[1]);
         close(bb_in[0]);
-        bzero(buffer, sizeof(buffer));
 
         /**
         Connect to the server or throw an error if it can't.
@@ -89,18 +89,24 @@ int main(int argc, char * argv[])
         cout << "Connection Established on fd: " << op.sockFD << endl;
         cout << "FHBB input on fd: " << bb_in[1] << endl;
         cout << "FHBB output on fd: " << bb_out[0] << endl;
-#else
-        cout << "Let's measure some shit." << endl;
-#endif // DEBUG
-
         stream.str("Testu");
         handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
         stream.str("");
         stream.clear();
         pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        cerr << "Test message: " << stream.str() << endl;
+        cerr << "Test message 1: " << stream.str() << endl;
+        stream.clear();
+        stream << " Roundu 2uuu";
+        handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
         stream.str("");
         stream.clear();
+        pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
+        cerr << "Test message 2: " << stream.str() << endl;
+        stream.str("");
+        stream.clear();
+#else
+        cout << "Let's measure some shit." << endl;
+#endif // DEBUG
 
         install_upkg_handler(bb_in[1], bb_out[0], &buffer,
                              &op, 1024);
@@ -162,9 +168,11 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
 {
     stringstream stream;
     string input;
-    cout << "Enter a position." << endl;
+
+    cout << "Enter a position:" << endl;
+
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str() << endl; //should be "X"
+    cout << stream.str(); //should be "X"
     stream.str("");
     stream.clear();
     cin >> input;
@@ -172,8 +180,9 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
     stream.clear();
+
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str() << endl; //should be "Y"
+    cout << stream.str(); //should be "Y"
     stream.str("");
     stream.clear();
     cin >> input;
@@ -236,9 +245,9 @@ void install_upkg_handler(int infd, int outfd, char ** buffer,
 
     socket_to_handler(stream, buffer, sl, blocksize);
 
-    cout << stream.str() << " Public Key." << endl;
+    cerr << stream.str() << " Public Key." << endl;
 
-    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
+    send_ack_pipe(infd);
     stream.str("");
     stream.clear();
 
@@ -267,11 +276,10 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 
     while (stream.str() == "ACK")
     {
-        /**Pipe ACK from handler to black box**/
-        handler_to_pipe(stream, infd, outfd, buffer, blocksize);
-        /**Clear stream buffer**/
+        send_ack_pipe(infd);
         stream.str("");
         stream.clear();
+
         /**Pipe a Public Key from server to black box**/
         socket_to_pipe(infd, outfd, buffer, sl, blocksize);
         /**Pipe the corresponding encrypted location to server**/
@@ -281,8 +289,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
     }
 
     /**Pipe NAK from handler to black box**/
-    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
-    /**Clear stream buffer**/
+    send_nak_pipe(infd);
     stream.str("");
     stream.clear();
 
@@ -438,39 +445,6 @@ void socket_to_handler(ostream &stream, char ** buffer,
     stream.clear();
 }
 
-/*****************************
- *Read data from stream buffer and send it down the pipe
- *one block at a time.
- *Use this to communicate between handler and FHBB.
- ****************************/
-void handler_to_pipe(istream &stream, int infd, int outfd,
-                     char** buffer, int blocksize)
-{
-
-    bzero(*buffer, sizeof(*buffer));
-    int x;
-
-    do
-    {
-        x = 0;
-        stream.read(*buffer, blocksize);
-        x = stream.gcount();
-        write(infd, *buffer, x);
-
-        cerr << *buffer << " : to FHBB from handler." << endl;
-
-        bzero(*buffer, sizeof(*buffer));
-        *buffer[0] = '\n';
-        *buffer[1] = '\0';
-        write(infd, *buffer, 2);
-        bzero(*buffer, sizeof(*buffer));
-
-        recv_ack_pipe(outfd);
-        cerr << "for handler." << endl;
-    }
-    while (x == blocksize);
-}
-
 /*******************
  *Read from a pipe and place data into a stream buffer
  *Use this to communicate between handler and FHBB.
@@ -485,12 +459,12 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
     {
         x = 0;
         x = read(outfd, *buffer, blocksize);
+        sleep(0.1);
         stream.write(*buffer, x);
 
         cerr << *buffer << " : from FHBB to handler." << endl;
 
         bzero(*buffer, sizeof(*buffer));
-        //send_ack_pipe(infd);
     }
     while (x == blocksize);
 
@@ -513,12 +487,14 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
         /**Read pipe data**/
         x = 0;
         x = read(outfd, *buffer, blocksize);
+        sleep(0.1);
         write_to_socket(buffer, x, sl);
 
+#ifdef DEBUG
         cerr << *buffer << " : from FHBB to socket." << endl;
+#endif
 
         bzero(*buffer, sizeof(*buffer));
-        //send_ack_pipe(infd);
     }
     while (x == blocksize);
 }
@@ -531,7 +507,6 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
-    int z;
 
     do
     {
@@ -539,17 +514,52 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         x = 0;
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
+        sleep(0.1);
 
+#ifdef DEBUG
         cerr << *buffer << " : to FHBB from socket." << endl;
+#endif // DEBUG
 
         bzero(*buffer, sizeof(*buffer));
-        *buffer[0] = '\n';
-        *buffer[1] = '\0';
-        write(infd, *buffer, 2);
-        bzero(*buffer, sizeof(*buffer));
+
+        terminate_pipe_msg(infd);
 
         recv_ack_pipe(outfd);
+
         cerr << "for socket." << endl;
+    }
+    while (x == blocksize);
+}
+
+/*****************************
+ *Read data from stream buffer and send it down the pipe
+ *one block at a time.
+ *Use this to communicate between handler and FHBB.
+ ****************************/
+void handler_to_pipe(istream &stream, int infd, int outfd,
+                     char** buffer, int blocksize)
+{
+    bzero(*buffer, sizeof(*buffer));
+    int x;
+
+    do
+    {
+        x = 0;
+        stream.read(*buffer, blocksize);
+        x = stream.gcount();
+
+        write(infd, *buffer, x);
+        sleep(0.1);
+
+        cerr << *buffer << " : to FHBB from handler." << endl;
+
+        bzero(*buffer, sizeof(*buffer));
+
+        terminate_pipe_msg(infd);
+
+        recv_ack_pipe(outfd);
+
+        cerr << "for handler." << endl;
     }
     while (x == blocksize);
 }
@@ -559,22 +569,51 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
  *****************/
 bool send_ack_pipe(int infd)
 {
-    char * ack = new char[4];
+    char * ack = new char[3];
+    bzero(ack, sizeof(ack));
     ack[0] = 'A';
     ack[1] = 'C';
     ack[2] = 'K';
-    ack[3] = '\n';
-    //ack[4] = '\0';
     if (write(infd, ack, sizeof(ack)) == sizeof(ack))
     {
-        cerr << ack << " sent." << endl;
-        delete [] ack;
         sleep(0.1);
+        terminate_pipe_msg(infd);
+        cerr << "ACK sent " << endl;
+        delete [] ack;
         return true;
     }
     else
     {
-        cerr << "OH MY GOD THEY ARE IN THE PIPES!" << endl;
+        sleep(0.1);
+        cerr << "SEND_FAIL ";
+        delete [] ack;
+        return false;
+    }
+}
+
+/*****************
+ *Send NAK to the pipe.
+ *****************/
+bool send_nak_pipe(int infd)
+{
+    char * ack = new char[3];
+    bzero(ack, sizeof(ack));
+    ack[0] = 'N';
+    ack[1] = 'A';
+    ack[2] = 'K';
+    if (write(infd, ack, sizeof(ack)) == sizeof(ack))
+    {
+        sleep(0.1);
+        terminate_pipe_msg(infd);
+        cerr << "NAK sent " << endl;
+        delete [] ack;
+        return true;
+    }
+    else
+    {
+        sleep(0.1);
+        cerr << "SEND_FAIL ";
+        delete [] ack;
         return false;
     }
 }
@@ -586,26 +625,44 @@ bool recv_ack_pipe(int outfd)
 {
     char * ack = new char[4];
     char * chk = new char[4];
+    bzero(ack, sizeof(ack));
+    bzero(chk, sizeof(chk));
     ack[0] = 'A';
     ack[1] = 'C';
     ack[2] = 'K';
     ack[3] = '\0';
-    bzero(chk, sizeof(chk));
-    read(outfd, chk, 4);
+
+    read(outfd, chk, sizeof(chk));
+    sleep(0.1);
     chk[3] = '\0';
     if (strcmp(ack, chk) == 0)
     {
         cerr << chk << " got ";
-        sleep(0.1);
         delete [] ack;
         delete [] chk;
         return true;
     }
     else
     {
-        cerr << chk << " OH MY GOD THEY ARE IN THE PIPES!" << endl;
+        cerr << chk << " RECV_FAIL ";
         delete [] ack;
         delete [] chk;
         return false;
     }
+}
+
+/*************************
+ *Send a newline and null terminator to
+ *the black box, to terminate any messges
+ *to the pipe to its stdin.
+ *************************/
+void terminate_pipe_msg(int infd)
+{
+    char * buf = new char[2];
+    bzero(buf, sizeof(buf));
+    buf[0] = '\n';
+    buf[1] = '\0';
+    write(infd, buf, sizeof(buf));
+    sleep(0.1);
+    delete [] buf;
 }

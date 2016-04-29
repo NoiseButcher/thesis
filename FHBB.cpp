@@ -1,6 +1,7 @@
 #include "FHBB.h"
 #include <sys/resource.h>
 
+#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
  *systems. Operates as an I/O function box that pipes
@@ -32,7 +33,14 @@ int main(int argc, char * argv[])
 
     stringstream ts;
     char * test = new char[1025];
+    ts.str("");
+    ts.clear();
+    bzero(test, sizeof(test));
 
+    pipe_in(ts, &test, 1024);
+    pipe_out(ts, &test, 1024);
+    ts.str("");
+    ts.clear();
     pipe_in(ts, &test, 1024);
     pipe_out(ts, &test, 1024);
 
@@ -65,14 +73,29 @@ int main(int argc, char * argv[])
 pair<int, int> get_gps()
 {
 	int lat, lng;
-	string input;
+	stringstream input;
+	char * buffer = new char[3];
+	bzero(buffer, sizeof(buffer));
+	input.str("");
+	input.clear();
 
-	cout << "X";
-	cin.ignore();
-	cin >> lat;
-	cout << "Y";
-	cin.ignore();
-	cin >> lng;
+	cout << "X:";
+	cout.flush();
+
+	pipe_in(input, &buffer, 2);
+	input >> lat;
+    input.str("");
+	input.clear();
+
+	cout << "Y:";
+	cout.flush();
+
+	pipe_in(input, &buffer, 2);
+	input >> lng;
+    input.str("");
+	input.clear();
+
+	delete [] buffer;
 
 	return make_pair(lat, lng);
 }
@@ -128,18 +151,14 @@ void display_positions(vector<long> d)
 void install_upkg_android(UserPackage * upk)
 {
     stringstream stream;
-    fstream wtf;
     char * buffer = new char[1025];
+
+    stream.str("");
+    stream.clear();
+    bzero(buffer, sizeof(buffer));
 
     //Read the base from standard input
     pipe_in(stream, &buffer, 1024);
-
-    wtf.open("cbase.txt", fstream::out | fstream::trunc);
-    wtf << stream.str();
-    wtf << endl;
-    wtf << "Base!";
-    wtf.close();
-    sleep(3);
 
     readContextBase(stream, upk->m, upk->p, upk->r,
                     upk->gens, upk->ords);
@@ -152,13 +171,6 @@ void install_upkg_android(UserPackage * upk)
 
     //Get the context from standard input
     pipe_in(stream, &buffer, 1024);
-
-    wtf.open("context.txt", fstream::out | fstream::trunc);
-    wtf << stream.str();
-    wtf << endl;
-    wtf << "Context!";
-    wtf.close();
-    sleep(3);
 
     stream >> *upk->context;
     stream.str("");
@@ -181,7 +193,11 @@ void install_upkg_android(UserPackage * upk)
     stream.str("");
     stream.clear();
 
-    recv_ack_android();
+    if (!recv_ack_android())
+    {
+        cerr << "ABORT ABORT" << endl;
+        exit(0);
+    }
 
     delete [] buffer;
 }
@@ -194,6 +210,9 @@ int send_location_android(UserPackage * upk, int x, int y)
 {
     stringstream stream;
     char * buffer = new char[1025];
+    stream.str("");
+    stream.clear();
+    bzero(buffer, sizeof(buffer));
 
     //Get public key, send location
     while (recv_ack_android())
@@ -228,6 +247,9 @@ vector<long> get_distances_android(UserPackage * upk)
     stringstream stream;
     Ctxt encrypted_distances(*upk->publicKey);
     char * buffer = new char[1025];
+    stream.str("");
+    stream.clear();
+    bzero(buffer, sizeof(buffer));
 
     pipe_in(stream, &buffer, 1024);
 
@@ -250,26 +272,39 @@ vector<long> get_distances_android(UserPackage * upk)
 bool recv_ack_android()
 {
     int pk = cin.peek();
-    if (pk == '\0')
+    while (pk < 32)
     {
         cin.ignore(1);
+        pk = cin.peek();
     }
-    char * ack = new char [5];
-    char * chk = new char[5];
+
+    char * ack = new char [4];
+    char * chk = new char[4];
+    bzero(ack, sizeof(ack));
+    bzero(chk, sizeof(chk));
 
     chk[0]='A';
     chk[1]='C';
     chk[2]='K';
     chk[3]='\0';
 
-    cin.getline(ack, 5);
-    cin.sync();
+    cin.get(ack, 4);
 
-    if (ack == chk) {
+#ifdef INTEGCHK
+    fstream wtf;
+    wtf.open("integ.txt", fstream::out | fstream::app);
+    wtf << "<<<ACK>>>" << endl;
+    wtf.write(ack, sizeof(ack));
+    wtf << endl;
+    wtf.close();
+#endif
+
+    if (strcmp(ack, chk) == 0) {
         delete [] chk;
         delete [] ack;
         return true;
     }
+
     delete [] chk;
     delete [] ack;
     return false;
@@ -279,9 +314,10 @@ bool recv_ack_android()
  *This is a seperate function for continuity
  *purposes only.
  ****************/
-bool send_ack_android()
+void send_ack_android()
 {
     cout << "ACK";
+    cout.flush();
 }
 
 /**************************
@@ -295,18 +331,39 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
     int x;
     cin.sync();
 
+/*
+#ifdef INTEGCHK
+    fstream wtf;
+    wtf.open("integ.txt", fstream::out | fstream::app);
+    wtf << "<<<OUTPUT>>>" << endl;
+#endif
+*/
+
     do
     {
         x = 0;
         stream.read(*buffer, blocksize);
         x = stream.gcount();
         cout.write(*buffer, x);
-        bzero(*buffer, sizeof(*buffer));
-        //recv_ack_android();
         sleep(0.1);
+        cout.flush();
+
+/*
+#ifdef INTEGCHK
+            wtf.write(*buffer, x);
+            wtf << endl;
+#endif // INTEGCHK
+*/
+
+        bzero(*buffer, sizeof(*buffer));
+
     }
     while (x == blocksize);
-
+/*
+#ifdef INTEGCHK
+    wtf.close();
+#endif // INTEGCHK
+*/
 }
 
 /**************************
@@ -321,12 +378,20 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
     bzero(*buffer, sizeof(*buffer));
     int x, y, pk;
 
+#ifdef INTEGCHK
+    fstream wtf;
+    wtf.open("integ.txt", fstream::out | fstream::app);
+    wtf << "<<<INPUT>>>" << endl;
+#endif
+
     do
     {
+        /*Remove any null characters*/
         pk = cin.peek();
-        if (pk == '\0')
+        while (pk < 32)
         {
             cin.ignore(1);
+            pk = cin.peek();
         }
 
         x = 0;
@@ -336,6 +401,12 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             cin.getline(*buffer, blocksize - x);
             y = cin.gcount() - 1;
             stream.write(*buffer, y);
+
+#ifdef INTEGCHK
+            wtf.write(*buffer, y);
+            wtf << endl;
+#endif // INTEGCHK
+
             bzero(*buffer, sizeof(*buffer));
             x += y;
             pk = cin.peek();
@@ -354,4 +425,8 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
     }
     while (x == blocksize);
     stream.clear();
+
+#ifdef INTEGCHK
+    wtf.close();
+#endif // INTEGCHK
 }
