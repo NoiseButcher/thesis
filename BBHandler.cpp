@@ -1,7 +1,7 @@
 #include "BBHandler.h"
 #include <sys/resource.h>
 
-#define DEBUG
+//#define DEBUG
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
@@ -242,18 +242,21 @@ void install_upkg_handler(int infd, int outfd, char ** buffer,
 void send_location_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
-    stringstream stream;
-
+    cerr << "Getting location data" << endl;
     while (recv_ack_socket(sl))
     {
+        cerr << ".";
         send_ack_pipe(infd); //Send ACK to pipe
         send_ack_socket(sl); //Reply with ACK to server
+        cerr << ".";
         socket_to_pipe(infd, outfd, buffer, sl, blocksize); //PK
+        cerr << ".";
         pipe_to_socket(infd, outfd, buffer, sl, blocksize); //EncLoc
+        cerr << ".";
     }
-
+    cerr << endl;
+    cerr << "Locations sent to server." << endl;
     send_nak_pipe(infd);
-
     if (recv_ack_socket(sl))
     {
         send_ack_pipe(infd);
@@ -267,24 +270,13 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 void get_distance_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
-    stringstream stream;
-
-    /**Get those encrypted distances**/
+    cerr << "Downloading distances.";
     socket_to_pipe(infd, outfd, buffer, sl, blocksize);
-
-    /**Pipe ACK from black box to handler**/
-    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-
-    /**Check contents of transfer**/
-    cout << stream.str() << " Context." << endl;
-
-    /**Pipe ACK from handler to server**/
-    handler_to_socket(stream, buffer, sl, blocksize);
-
-    /**Clear stream buffer**/
-    stream.str("");
-    stream.clear();
-
+    cerr << ".";
+    recv_ack_pipe(outfd);
+    cerr << "." << endl;
+    send_ack_socket(sl);
+    cerr << "Done." << endl;
 }
 
 /*******************COMMUNICATION FUNCTIONS************************/
@@ -375,7 +367,6 @@ void handler_to_socket(istream &stream, char ** buffer,
         stream.read(*buffer, blocksize);
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
-
     }
     while (k == blocksize);
 }
@@ -389,7 +380,6 @@ void socket_to_handler(ostream &stream, char ** buffer,
                       ServerLink * sl, int blocksize)
 {
     int k;
-
     do
     {
         k = 0;
@@ -398,7 +388,6 @@ void socket_to_handler(ostream &stream, char ** buffer,
         bzero(*buffer, sizeof(*buffer));
     }
     while (k == blocksize);
-
     stream.clear();
 }
 
@@ -438,7 +427,6 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
 
     do
     {
-        /**Read pipe data**/
         x = 0;
         x = read(outfd, *buffer, blocksize);
         sleep(0.1);
@@ -456,13 +444,11 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
     int x;
     do
     {
-        /**Get socket data into buffer**/
         x = 0;
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
         sleep(0.1);
         terminate_pipe_msg(infd);
-
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for socket data received." << endl;
@@ -485,7 +471,6 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
-
     do
     {
         x = 0;
@@ -493,9 +478,7 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         x = stream.gcount();
         write(infd, *buffer, x);
         sleep(0.1);
-
         terminate_pipe_msg(infd);
-
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for handler data received." << endl;

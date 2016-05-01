@@ -1,7 +1,7 @@
 #include "FHBB.h"
 #include <sys/resource.h>
 
-#define INTEGCHK
+//#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
  *systems. Operates as an I/O function box that pipes
@@ -183,7 +183,7 @@ void install_upkg_android(UserPackage * upk)
     bzero(buffer, sizeof(buffer));
 
     /**GET BASE**/
-#ifdef INTEGCHK
+#ifndef INTEGCHK
     pipe_in(stream, &buffer, 1025);
 #else
     pipe_in_dbg(stream, &buffer, 1025);
@@ -200,7 +200,7 @@ void install_upkg_android(UserPackage * upk)
     send_ack_android();
 
     /**GET CONTEXT**/
-#ifdef INTEGCHK
+#ifndef INTEGCHK
     pipe_in(stream, &buffer, 1025);
 #else
     pipe_in_dbg(stream, &buffer, 1025);
@@ -223,7 +223,7 @@ void install_upkg_android(UserPackage * upk)
 
     /**PUBLIC KEY**/
     stream << *upk->publicKey;
-#ifdef INTEGCHK
+#ifndef INTEGCHK
     pipe_out(stream, &buffer, 1024);
 #else
     pipe_out_dbg(stream, &buffer, 1024);
@@ -253,8 +253,6 @@ int send_location_android(UserPackage * upk, int x, int y)
     stream.clear();
     bzero(buffer, sizeof(buffer));
 
-    cerr << "Getting location information." << endl;
-
     /*Get public key, send location*/
     while (recv_ack_android() == true)
     {
@@ -265,8 +263,6 @@ int send_location_android(UserPackage * upk, int x, int y)
         pipe_in_dbg(stream, &buffer, 1025);
 #endif // INTEGCHK
 
-        cerr << "PK received." << endl;
-
         stream >> *pk;
 
         Ctxt output(*pk);
@@ -275,8 +271,6 @@ int send_location_android(UserPackage * upk, int x, int y)
         stream.str("");
         stream.clear();
 
-        cerr << "Location Encrypted." << endl;
-
         stream << output;
 #ifndef INTEGCHK
         pipe_out(stream, &buffer, 1024);
@@ -284,14 +278,12 @@ int send_location_android(UserPackage * upk, int x, int y)
         pipe_out_dbg(stream, &buffer, 1024);
 #endif // INTEGCHK
 
-        cerr << "Location piped." << endl;
-
         stream.str("");
         stream.clear();
         delete pk;
     }
 
-    if (recv_ack_android() == false)
+    if (!recv_ack_android())
     {
         cerr << "ABORT ABORT" << endl;
         exit(0);
@@ -437,25 +429,26 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
         {
             y = 0;
             cin.getline(*buffer, blocksize - x);
+            sleep(0.1);
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
-            x += y;
             stream.write(*buffer, y);
-            bzero(*buffer, sizeof(*buffer));
+            sleep(0.1);
+            x += y;
             pk = cin.peek();
+            sleep(0.1);
+
             if ((x < charlim) && (pk > 31))
             {
                 stream << endl;
                 x++;
             }
+            bzero(*buffer, sizeof(*buffer));
         }
         while ((x < blocksize) && (pk > 31) && (pk < 127));
-
         send_ack_android();
-        sleep(0.1);
-
     }
-    while (x == blocksize);
+    while (x == charlim);
     stream.clear();
 }
 
@@ -463,8 +456,8 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
 void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
-    int charlim = blocksize - 1;
-    int x, y, pk;
+    int x, y, pk, charlim;
+    charlim = blocksize - 1;
 
     fstream wtf;
     wtf.open("integ.txt", fstream::out | fstream::app);
@@ -478,16 +471,18 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
         {
             y = 0;
             cin.getline(*buffer, blocksize - x);
-
+            sleep(0.1);
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
-
             stream.write(*buffer, y);
+            sleep(0.1);
             wtf.write(*buffer, y);
+            sleep(0.1);
 
             x += y;
 
             pk = cin.peek();
+            sleep(0.1);
             if ((x < charlim) && (pk > 31))
             {
                 stream << endl;
