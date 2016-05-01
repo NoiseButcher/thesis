@@ -49,8 +49,9 @@ int send_location_android(UserPackage * upk, int x, int y);
 vector<long> get_distances_android(UserPackage * upk);
 bool recv_ack_android();
 void send_ack_android();
+void purge_nulls();
 void pipe_out(istream &stream, char** buffer, int blocksize);
 void pipe_in(ostream &stream, char ** buffer, int blocksize);
-void integrity_check(char ** buffer, istream &stream, int numbytes,
-                    int mode);
+void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize);
+void pipe_out_dbg(istream &stream, char** buffer, int blocksize);
 #endif

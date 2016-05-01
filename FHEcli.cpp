@@ -293,7 +293,6 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
 
     cout << "Sending my encrypted position." << endl;
 
-    //while (recv_ack(sl))
     while (sock_handshake(sl))
     {
         FHEPubKey * pk = new FHEPubKey(*upk->context);

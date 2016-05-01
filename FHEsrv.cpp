@@ -343,7 +343,6 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
     **/
     for (k = 0; k < sd->users; k++)
     {
-        //send_ack(sl);
         sock_handshake(sl);
         Ctxt newusr(*sd->cluster[k].thisKey);
         stream << *sd->cluster[k].thisKey;

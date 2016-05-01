@@ -220,47 +220,20 @@ void display_positions_handler(int infd, int outfd, char ** buffer,
 void install_upkg_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
-    stringstream stream;
-
-#ifdef DEBUG
     socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Base
-
-    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-
+    recv_ack_pipe(outfd);
     cerr << "Base data streamed." << endl;
-
-    handler_to_socket(stream, buffer, sl, blocksize);
-    stream.str("");
-    stream.clear();
+    send_ack_socket(sl);
 
     socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Context
-
-    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-
+    recv_ack_pipe(outfd);
     cerr << "Context Received." << endl;
-
-    handler_to_socket(stream, buffer, sl, blocksize);
-    stream.str("");
-    stream.clear();
+    send_ack_socket(sl);
 
     pipe_to_socket(infd, outfd, buffer, sl, blocksize); //Public Key
-
-    socket_to_handler(stream, buffer, sl, blocksize);
-
     cerr << "Public Key sent." << endl;
-
+    recv_ack_socket(sl);
     send_ack_pipe(infd);
-    stream.str("");
-    stream.clear();
-
-#else
-    socket_to_pipe(infd, buffer, sl, blocksize); //Base
-    pipe_to_socket(outfd, buffer, sl, blocksize); //send ACK
-    socket_to_pipe(infd, buffer, sl, blocksize); //Context
-    pipe_to_socket(outfd, buffer, sl, blocksize); //send ACK
-    pipe_to_socket(outfd, buffer, sl, blocksize); //Public Key
-    socket_to_pipe(infd, buffer, sl, blocksize); //get ACK
-#endif
 }
 
 /*********************************
@@ -276,6 +249,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
     while (recv_ack_socket(sl))
     {
         send_ack_pipe(infd);
+        send_ack_socket(sl);
 
         /**Pipe a Public Key from server to black box**/
         socket_to_pipe(infd, outfd, buffer, sl, blocksize);
@@ -405,7 +379,6 @@ void handler_to_socket(istream &stream, char ** buffer,
     {
         k = 0;
         stream.read(*buffer, blocksize);
-        cerr << *buffer << " : from handler to socket." << endl;
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
 
@@ -428,12 +401,10 @@ void socket_to_handler(ostream &stream, char ** buffer,
         k = 0;
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
-
-        cerr << *buffer << " : from socket to handler." << endl;
-
         bzero(*buffer, sizeof(*buffer));
     }
     while (k == blocksize);
+
     stream.clear();
 }
 
@@ -453,9 +424,6 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
         x = read(outfd, *buffer, blocksize);
         sleep(0.1);
         stream.write(*buffer, x);
-
-        cerr << *buffer << " : from FHBB to handler." << endl;
-
         bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
@@ -500,11 +468,15 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
         sleep(0.1);
-        bzero(*buffer, sizeof(*buffer));
-        terminate_pipe_msg(infd);
-        recv_ack_pipe(outfd);
 
-        cerr << "for socket." << endl;
+        bzero(*buffer, sizeof(*buffer));
+
+        terminate_pipe_msg(infd);
+
+        if (!recv_ack_pipe(outfd))
+        {
+            cerr << "No ACK for socket data block from FHBB." << endl;
+        }
     }
     while (x == blocksize);
 }
@@ -529,15 +501,14 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         write(infd, *buffer, x);
         sleep(0.1);
 
-        cerr << *buffer << " : to FHBB from handler." << endl;
-
         bzero(*buffer, sizeof(*buffer));
 
         terminate_pipe_msg(infd);
 
-        recv_ack_pipe(outfd);
-
-        cerr << "for handler." << endl;
+        if (!recv_ack_pipe(outfd))
+        {
+            cerr << "No ACK for handler data block from FHBB." << endl;
+        }
     }
     while (x == blocksize);
 }
@@ -556,14 +527,12 @@ bool send_ack_pipe(int infd)
     {
         sleep(0.1);
         terminate_pipe_msg(infd);
-        cerr << "ACK sent to FHBB." << endl;
         delete [] ack;
         return true;
     }
     else
     {
         sleep(0.1);
-        cerr << "SEND_FAIL ";
         delete [] ack;
         return false;
     }
@@ -583,14 +552,13 @@ bool send_nak_pipe(int infd)
     {
         sleep(0.1);
         terminate_pipe_msg(infd);
-        cerr << "NAK sent " << endl;
+        cerr << "NAK sent to FHBB." << endl;
         delete [] ack;
         return true;
     }
     else
     {
         sleep(0.1);
-        cerr << "SEND_FAIL ";
         delete [] ack;
         return false;
     }
@@ -613,20 +581,42 @@ bool recv_ack_pipe(int outfd)
     read(outfd, chk, sizeof(chk));
     sleep(0.1);
     chk[3] = '\0';
+
     if (strcmp(ack, chk) == 0)
     {
-        cerr << chk << " got from FHBB ";
         delete [] ack;
         delete [] chk;
         return true;
     }
     else
     {
-        cerr << "No ACK received from FHBB ";
         delete [] ack;
         delete [] chk;
         return false;
     }
+}
+
+/*******************************
+ *Quick function to help with timing.
+ *Sends an ACK command to the server.
+ *******************************/
+bool send_ack_socket(ServerLink * sl)
+{
+    char * buffer = new char[4];
+    bzero(buffer, sizeof(buffer));
+    buffer[0] = 'A';
+    buffer[1] = 'C';
+    buffer[2] = 'K';
+    buffer[3] = '\0';
+    if (write_to_socket(&buffer,
+                        sizeof(buffer), sl) == sizeof(buffer))
+    {
+        cerr << "ACK sent to server." << endl;
+        delete [] buffer;
+        return true;
+    }
+    delete [] buffer;
+    return false;
 }
 
 /******************************
@@ -649,9 +639,9 @@ bool recv_ack_socket(ServerLink * sl)
         if (strcmp(ack, buffer) == 0)
         {
             cerr << "ACK got from server." << endl;
-            return true;
             delete [] buffer;
             delete [] ack;
+            return true;
         }
     }
     delete [] buffer;
