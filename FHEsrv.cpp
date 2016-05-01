@@ -343,7 +343,8 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
     **/
     for (k = 0; k < sd->users; k++)
     {
-        send_ack(sl);
+        //send_ack(sl);
+        sock_handshake(sl);
         Ctxt newusr(*sd->cluster[k].thisKey);
         stream << *sd->cluster[k].thisKey;
         stream_to_socket(stream, &buffer, sl, 1024);
@@ -417,7 +418,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
                           *sd->cluster[id].thisKey);
 
 #ifdef DEBUG
-    cout << "Output for client " << sl.thisClient;
+    cout << "Output for client " << sl->thisClient;
     cout << " generated." << endl;
 #endif // DEBUG
 
@@ -692,6 +693,18 @@ bool recv_ack(ClientLink * sl)
     delete [] buffer;
     delete [] ack;
     return false;
+}
+
+/********************
+ *Sends ACK to the client and awaits an ACK in return.
+ *Necessary to break up data transmission and
+ *prevent the FHBB pipes from flooding.
+ *******************/
+bool sock_handshake(ClientLink * sl)
+{
+    if (!send_ack(sl)) return false;
+    if (!recv_ack(sl)) return false;
+    return true;
 }
 
 /****************************

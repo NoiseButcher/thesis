@@ -41,8 +41,17 @@ int main(int argc, char * argv[])
     pipe_out(ts, &test, 1024);
     ts.str("");
     ts.clear();
+    bzero(test, sizeof(test));
+
     pipe_in(ts, &test, 1024);
     pipe_out(ts, &test, 1024);
+    ts.str("");
+    ts.clear();
+    bzero(test, sizeof(test));
+
+    delete [] test;
+    cin.sync();
+    cout.flush();
 
     install_upkg_android(&me);
     pair <int, int> loc = get_gps();
@@ -53,7 +62,7 @@ int main(int argc, char * argv[])
     while (true)
     {
         loc = get_gps();
-        send_ack_android();
+        //send_ack_android();
         send_location_android(&me, loc.first, loc.second);
         them = get_distances_android(&me);
         display_positions(them);
@@ -96,6 +105,9 @@ pair<int, int> get_gps()
 	input.clear();
 
 	delete [] buffer;
+
+	cin.sync();
+	cout.flush();
 
 	return make_pair(lat, lng);
 }
@@ -193,7 +205,7 @@ void install_upkg_android(UserPackage * upk)
     stream.str("");
     stream.clear();
 
-    if (!recv_ack_android())
+    if (recv_ack_android() == false)
     {
         cerr << "ABORT ABORT" << endl;
         exit(0);
@@ -210,20 +222,23 @@ int send_location_android(UserPackage * upk, int x, int y)
 {
     stringstream stream;
     char * buffer = new char[1025];
+
     stream.str("");
     stream.clear();
     bzero(buffer, sizeof(buffer));
 
-    //Get public key, send location
-    while (recv_ack_android())
+    /*Get public key, send location*/
+    while (recv_ack_android() == true)
     {
         FHEPubKey * pk = new FHEPubKey(*upk->context);
         pipe_in(stream, &buffer, 1024);
         stream >> *pk;
         stream.str("");
         stream.clear();
+
         Ctxt output(*pk);
         output = encrypt_location(x, y, *pk);
+
         stream << output;
         pipe_out(stream, &buffer, 1024);
         stream.str("");
@@ -231,7 +246,11 @@ int send_location_android(UserPackage * upk, int x, int y)
         delete pk;
     }
 
-    recv_ack_android();
+    if (recv_ack_android() == false)
+    {
+        cerr << "ABORT ABORT" << endl;
+        exit(0);
+    }
 
     delete [] buffer;
 
@@ -293,7 +312,7 @@ bool recv_ack_android()
 #ifdef INTEGCHK
     fstream wtf;
     wtf.open("integ.txt", fstream::out | fstream::app);
-    wtf << "<<<ACK>>>" << endl;
+    wtf << "<<<RECV-ACK>>>" << endl;
     wtf.write(ack, sizeof(ack));
     wtf << endl;
     wtf.close();
@@ -331,13 +350,11 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
     int x;
     cin.sync();
 
-/*
 #ifdef INTEGCHK
     fstream wtf;
     wtf.open("integ.txt", fstream::out | fstream::app);
     wtf << "<<<OUTPUT>>>" << endl;
 #endif
-*/
 
     do
     {
@@ -348,22 +365,23 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
         sleep(0.1);
         cout.flush();
 
-/*
+
 #ifdef INTEGCHK
+        if (x < blocksize)
+        {
             wtf.write(*buffer, x);
             wtf << endl;
+        }
 #endif // INTEGCHK
-*/
 
         bzero(*buffer, sizeof(*buffer));
-
     }
     while (x == blocksize);
-/*
+
 #ifdef INTEGCHK
     wtf.close();
 #endif // INTEGCHK
-*/
+
 }
 
 /**************************
@@ -403,8 +421,11 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             stream.write(*buffer, y);
 
 #ifdef INTEGCHK
-            wtf.write(*buffer, y);
-            wtf << endl;
+            if (y < blocksize)
+            {
+                wtf.write(*buffer, y);
+                wtf << endl;
+            }
 #endif // INTEGCHK
 
             bzero(*buffer, sizeof(*buffer));
@@ -429,4 +450,30 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
 #ifdef INTEGCHK
     wtf.close();
 #endif // INTEGCHK
+}
+
+/**************************
+ *Write some communication/exchanged data
+ *to a file as unformatted data to check
+ *transmission integrity.
+ ***************************/
+void integrity_check(char ** buffer, istream &stream, int numbytes,
+                    int mode)
+{
+    fstream wtf;
+    wtf.open("integ.txt", fstream::out | fstream::app);
+    if (mode)
+    {
+        wtf << "<<<INPUT>>>" << endl;
+        wtf.write(*buffer, numbytes);
+        wtf << endl;
+    }
+    else
+    {
+        wtf << "<<<OUTPUT>>>" << endl;
+        stream.read(*buffer, numbytes);
+        wtf.write(*buffer, numbytes);
+        wtf << endl;
+    }
+    wtf.close();
 }

@@ -68,5 +68,6 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
 bool send_ack_pipe(int infd);
 bool send_nak_pipe(int infd);
 bool recv_ack_pipe(int outfd);
+bool recv_ack_socket(ServerLink * sl);
 void terminate_pipe_msg(int infd);
 #endif

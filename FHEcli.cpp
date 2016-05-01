@@ -293,7 +293,8 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
 
     cout << "Sending my encrypted position." << endl;
 
-    while (recv_ack(sl))
+    //while (recv_ack(sl))
+    while (sock_handshake(sl))
     {
         FHEPubKey * pk = new FHEPubKey(*upk->context);
         socket_to_stream(stream, &buffer, sl, 1024);
@@ -427,6 +428,19 @@ bool recv_ack(ServerLink * sl)
     delete [] buffer;
     delete [] ack;
     return false;
+}
+
+/********************
+ *Awaits a received ACK before then sending
+ *one in return.
+ *Necessary to break up data transmission and
+ *prevent the FHBB pipes from flooding.
+ *******************/
+bool sock_handshake(ServerLink * sl)
+{
+    if (!recv_ack(sl)) return false;
+    if (!send_ack(sl)) return false;
+    return true;
 }
 
 /****************************

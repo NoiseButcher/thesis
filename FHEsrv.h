@@ -125,6 +125,7 @@ void send_server_update(ClientLink * sl);
 bool send_ack(ClientLink * sl);
 bool send_nak(ClientLink * sl);
 bool recv_ack(ClientLink * sl);
+bool sock_handshake(ClientLink * sl);
 void stream_to_socket(istream &stream, char ** buffer,
                       ClientLink * sl, int blocksize);
 void socket_to_stream(ostream &stream, char ** buffer,

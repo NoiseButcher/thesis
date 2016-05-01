@@ -89,14 +89,14 @@ int main(int argc, char * argv[])
         cout << "Connection Established on fd: " << op.sockFD << endl;
         cout << "FHBB input on fd: " << bb_in[1] << endl;
         cout << "FHBB output on fd: " << bb_out[0] << endl;
-        stream.str("Testu");
+        stream.str("Spawn");
         handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
         stream.str("");
         stream.clear();
         pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
         cerr << "Test message 1: " << stream.str() << endl;
         stream.clear();
-        stream << " Roundu 2uuu";
+        stream << " more Overlords!";
         handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
         stream.str("");
         stream.clear();
@@ -171,21 +171,23 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
 
     cout << "Enter a position:" << endl;
 
+    /**Get longitude from CIN and pipe to FHBB**/
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str(); //should be "X"
+    cout << stream.str(); //Get "X:"
     stream.str("");
     stream.clear();
-    cin >> input;
+    cin >> input;       //Get integer longitude
     stream << input;
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
     stream.clear();
 
+    /**Get latitude from CIN and pipe to FHBB**/
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str(); //should be "Y"
+    cout << stream.str(); //Get "Y:"
     stream.str("");
     stream.clear();
-    cin >> input;
+    cin >> input;       //Get integer latitude
     stream << input;
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
@@ -225,7 +227,7 @@ void install_upkg_handler(int infd, int outfd, char ** buffer,
 
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
 
-    cerr << stream.str() << " Base." << endl;
+    cerr << "Base data streamed." << endl;
 
     handler_to_socket(stream, buffer, sl, blocksize);
     stream.str("");
@@ -235,7 +237,7 @@ void install_upkg_handler(int infd, int outfd, char ** buffer,
 
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
 
-    cerr << stream.str() << " Context." << endl;
+    cerr << "Context Received." << endl;
 
     handler_to_socket(stream, buffer, sl, blocksize);
     stream.str("");
@@ -245,7 +247,7 @@ void install_upkg_handler(int infd, int outfd, char ** buffer,
 
     socket_to_handler(stream, buffer, sl, blocksize);
 
-    cerr << stream.str() << " Public Key." << endl;
+    cerr << "Public Key sent." << endl;
 
     send_ack_pipe(infd);
     stream.str("");
@@ -271,35 +273,23 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 {
     stringstream stream;
 
-    /**Pipe ACK from server to handler**/
-    socket_to_handler(stream, buffer, sl, blocksize);
-
-    while (stream.str() == "ACK")
+    while (recv_ack_socket(sl))
     {
         send_ack_pipe(infd);
-        stream.str("");
-        stream.clear();
 
         /**Pipe a Public Key from server to black box**/
         socket_to_pipe(infd, outfd, buffer, sl, blocksize);
         /**Pipe the corresponding encrypted location to server**/
         pipe_to_socket(infd, outfd, buffer, sl, blocksize);
-        /**Pipe ACK from server to handler**/
-        socket_to_handler(stream, buffer, sl, blocksize);
     }
 
     /**Pipe NAK from handler to black box**/
     send_nak_pipe(infd);
-    stream.str("");
-    stream.clear();
 
-    /**Pipe ACK from server to handler**/
-    socket_to_handler(stream, buffer, sl, blocksize);
-    /**Pipe ACK from handler to black box**/
-    handler_to_pipe(stream, infd, outfd, buffer, blocksize);
-    /**Clear stream buffer**/
-    stream.str("");
-    stream.clear();
+    if (recv_ack_socket(sl))
+    {
+        send_ack_pipe(infd);
+    }
 }
 
 /************************************
@@ -415,9 +405,9 @@ void handler_to_socket(istream &stream, char ** buffer,
     {
         k = 0;
         stream.read(*buffer, blocksize);
+        cerr << *buffer << " : from handler to socket." << endl;
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
-        bzero(*buffer, sizeof(*buffer));
 
     }
     while (k == blocksize);
@@ -431,7 +421,6 @@ void handler_to_socket(istream &stream, char ** buffer,
 void socket_to_handler(ostream &stream, char ** buffer,
                       ServerLink * sl, int blocksize)
 {
-    bzero(*buffer, sizeof(*buffer));
     int k;
 
     do
@@ -439,6 +428,9 @@ void socket_to_handler(ostream &stream, char ** buffer,
         k = 0;
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
+
+        cerr << *buffer << " : from socket to handler." << endl;
+
         bzero(*buffer, sizeof(*buffer));
     }
     while (k == blocksize);
@@ -489,12 +481,6 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
         x = read(outfd, *buffer, blocksize);
         sleep(0.1);
         write_to_socket(buffer, x, sl);
-
-#ifdef DEBUG
-        cerr << *buffer << " : from FHBB to socket." << endl;
-#endif
-
-        bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
 }
@@ -505,7 +491,6 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
 void socket_to_pipe(int infd, int outfd, char ** buffer,
                     ServerLink * sl, int blocksize)
 {
-    bzero(*buffer, sizeof(*buffer));
     int x;
 
     do
@@ -515,15 +500,8 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
         sleep(0.1);
-
-#ifdef DEBUG
-        cerr << *buffer << " : to FHBB from socket." << endl;
-#endif // DEBUG
-
         bzero(*buffer, sizeof(*buffer));
-
         terminate_pipe_msg(infd);
-
         recv_ack_pipe(outfd);
 
         cerr << "for socket." << endl;
@@ -578,7 +556,7 @@ bool send_ack_pipe(int infd)
     {
         sleep(0.1);
         terminate_pipe_msg(infd);
-        cerr << "ACK sent " << endl;
+        cerr << "ACK sent to FHBB." << endl;
         delete [] ack;
         return true;
     }
@@ -637,18 +615,48 @@ bool recv_ack_pipe(int outfd)
     chk[3] = '\0';
     if (strcmp(ack, chk) == 0)
     {
-        cerr << chk << " got ";
+        cerr << chk << " got from FHBB ";
         delete [] ack;
         delete [] chk;
         return true;
     }
     else
     {
-        cerr << chk << " RECV_FAIL ";
+        cerr << "No ACK received from FHBB ";
         delete [] ack;
         delete [] chk;
         return false;
     }
+}
+
+/******************************
+ *Return boolean value of whether
+ *and ACK command has been received.
+ ******************************/
+bool recv_ack_socket(ServerLink * sl)
+{
+    char * buffer = new char[4];
+    char * ack = new char[4];
+    bzero(buffer, sizeof(buffer));
+    bzero(ack, sizeof(ack));
+    ack[0] = 'A';
+    ack[1] = 'C';
+    ack[2] = 'K';
+    ack[3] = '\0';
+    int blk = sizeof(ack);
+    if (stream_from_socket(&buffer, sizeof(buffer), sl) == blk)
+    {
+        if (strcmp(ack, buffer) == 0)
+        {
+            cerr << "ACK got from server." << endl;
+            return true;
+            delete [] buffer;
+            delete [] ack;
+        }
+    }
+    delete [] buffer;
+    delete [] ack;
+    return false;
 }
 
 /*************************

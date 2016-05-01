@@ -51,4 +51,6 @@ bool recv_ack_android();
 void send_ack_android();
 void pipe_out(istream &stream, char** buffer, int blocksize);
 void pipe_in(ostream &stream, char ** buffer, int blocksize);
+void integrity_check(char ** buffer, istream &stream, int numbytes,
+                    int mode);
 #endif
