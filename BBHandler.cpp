@@ -6,7 +6,7 @@
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
 layer above all of the FHE stuff. Forks itself and executes the
-FHBB binary, using the pipes too and from it
+FHBB binary, using the pipes to and from it.
  ************************************/
 int main(int argc, char * argv[])
 {
@@ -39,7 +39,8 @@ int main(int argc, char * argv[])
     pipe(bb_out);
     blackbox = fork();
 
-    /**CHILD I AM IN YOU**/
+    /**Child process to execute FHBB and configure the I/O
+    necessary to use it**/
     if (blackbox == 0)
     {
         /**Make cin pipe directly to the parent**/
@@ -48,7 +49,7 @@ int main(int argc, char * argv[])
             (close(bb_in[0]) != 0) ||
             (close(bb_in[1]) != 0))
         {
-            cerr << "OH MY GOD THEY ARE COMING FROM CIN!!" << endl;
+            cerr << "FHBB standard input pipe failure." << endl;
             exit(0);
         }
 
@@ -59,18 +60,18 @@ int main(int argc, char * argv[])
             (close(bb_out[0]) != 0) ||
             (close(bb_out[1]) != 0))
         {
-            cerr << "OH MY GOD THEY ARE COMING FROM COUT!!" << endl;
+            cerr << "FHBB standard output pipe failure." << endl;
             exit(0);
         }
 
         /**Run the black box **/
         execl("/home/sharky/Thesis/Guy_Code/FHBB_x", "FHBB_x", NULL);
 
-        cout << "Execution failure." << endl;
+        cerr << "FHBB execution failure." << endl;
 
         return 1;
     }
-    /**I AM YOUR FUCKING DADDY**/
+    /**Parent process, this is the handler for the FHBB binary**/
     else
     {
         close(bb_out[1]);
@@ -86,22 +87,20 @@ int main(int argc, char * argv[])
         }
 
 #ifdef DEBUG
-        cout << "Connection Established on fd: " << op.sockFD << endl;
-        cout << "FHBB input on fd: " << bb_in[1] << endl;
-        cout << "FHBB output on fd: " << bb_out[0] << endl;
+        cerr << "Connection Established on fd: " << op.sockFD << endl;
+        cerr << "FHBB input on fd: " << bb_in[1] << endl;
+        cerr << "FHBB output on fd: " << bb_out[0] << endl;
         stream.str("Spawn");
         handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
         stream.str("");
         stream.clear();
         pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        cerr << "Test message 1: " << stream.str() << endl;
         stream.clear();
         stream << " more Overlords!";
         handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
         stream.str("");
         stream.clear();
         pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        cerr << "Test message 2: " << stream.str() << endl;
         stream.str("");
         stream.clear();
 #else
@@ -125,18 +124,14 @@ int main(int argc, char * argv[])
         {
             get_gps_handler(bb_in[1], bb_out[0], &buffer, 1024);
 
-            /**Pipe ACK from black box to handler**/
-            pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
+            if (!recv_ack_pipe(bb_out[0]))
+            {
+                cerr << "Main loop ACK not received from FHBB";
+                cerr << endl;
+                exit(0);
+            }
 
-            /**Check contents of transfer**/
-            cout << stream.str() << " for GPS." << endl;
-
-            /**Pipe ACK from handler to server**/
-            handler_to_socket(stream, &buffer, &op, 1024);
-
-            /**Clear stream buffer**/
-            stream.str("");
-            stream.clear();
+            send_ack_socket(&op);
 
             send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
                               1024);
@@ -204,9 +199,8 @@ void display_positions_handler(int infd, int outfd, char ** buffer,
                                int blocksize)
 {
     stringstream stream;
-
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str() << endl;
+    cout << stream.str();
 
 }
 
@@ -220,19 +214,23 @@ void display_positions_handler(int infd, int outfd, char ** buffer,
 void install_upkg_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
+    cerr << "Installing FHE Scheme.";
     socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Base
+    cerr << ".";
     recv_ack_pipe(outfd);
-    cerr << "Base data streamed." << endl;
+    cerr << ".";
     send_ack_socket(sl);
-
+    cerr << ".";
     socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Context
+    cerr << ".";
     recv_ack_pipe(outfd);
-    cerr << "Context Received." << endl;
+    cerr << ".";
     send_ack_socket(sl);
-
+    cerr << ".";
     pipe_to_socket(infd, outfd, buffer, sl, blocksize); //Public Key
-    cerr << "Public Key sent." << endl;
+    cerr << "." << endl;
     recv_ack_socket(sl);
+    cerr << "Installation Complete." << endl;
     send_ack_pipe(infd);
 }
 
@@ -248,16 +246,12 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 
     while (recv_ack_socket(sl))
     {
-        send_ack_pipe(infd);
-        send_ack_socket(sl);
-
-        /**Pipe a Public Key from server to black box**/
-        socket_to_pipe(infd, outfd, buffer, sl, blocksize);
-        /**Pipe the corresponding encrypted location to server**/
-        pipe_to_socket(infd, outfd, buffer, sl, blocksize);
+        send_ack_pipe(infd); //Send ACK to pipe
+        send_ack_socket(sl); //Reply with ACK to server
+        socket_to_pipe(infd, outfd, buffer, sl, blocksize); //PK
+        pipe_to_socket(infd, outfd, buffer, sl, blocksize); //EncLoc
     }
 
-    /**Pipe NAK from handler to black box**/
     send_nak_pipe(infd);
 
     if (recv_ack_socket(sl))
@@ -460,7 +454,6 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
                     ServerLink * sl, int blocksize)
 {
     int x;
-
     do
     {
         /**Get socket data into buffer**/
@@ -468,15 +461,16 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
         sleep(0.1);
-
-        bzero(*buffer, sizeof(*buffer));
-
         terminate_pipe_msg(infd);
 
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "No ACK for socket data block from FHBB." << endl;
+            cerr << "No ACK for socket data received." << endl;
+            cerr << "Last block: " << *buffer << endl;
+            bzero(*buffer, sizeof(*buffer));
+            exit(0);
         }
+        bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
 }
@@ -497,18 +491,19 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         x = 0;
         stream.read(*buffer, blocksize);
         x = stream.gcount();
-
         write(infd, *buffer, x);
         sleep(0.1);
-
-        bzero(*buffer, sizeof(*buffer));
 
         terminate_pipe_msg(infd);
 
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "No ACK for handler data block from FHBB." << endl;
+            cerr << "No ACK for handler data received." << endl;
+            cerr << "Last block: " << *buffer << endl;
+            bzero(*buffer, sizeof(*buffer));
+            exit(0);
         }
+        bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
 }
@@ -552,7 +547,6 @@ bool send_nak_pipe(int infd)
     {
         sleep(0.1);
         terminate_pipe_msg(infd);
-        cerr << "NAK sent to FHBB." << endl;
         delete [] ack;
         return true;
     }
@@ -611,7 +605,6 @@ bool send_ack_socket(ServerLink * sl)
     if (write_to_socket(&buffer,
                         sizeof(buffer), sl) == sizeof(buffer))
     {
-        cerr << "ACK sent to server." << endl;
         delete [] buffer;
         return true;
     }
@@ -638,7 +631,6 @@ bool recv_ack_socket(ServerLink * sl)
     {
         if (strcmp(ack, buffer) == 0)
         {
-            cerr << "ACK got from server." << endl;
             delete [] buffer;
             delete [] ack;
             return true;
@@ -651,7 +643,7 @@ bool recv_ack_socket(ServerLink * sl)
 
 /*************************
  *Send a newline and null terminator to
- *the black box, to terminate any messges
+ *the black box, to terminate any messages
  *to the pipe to its stdin.
  *************************/
 void terminate_pipe_msg(int infd)

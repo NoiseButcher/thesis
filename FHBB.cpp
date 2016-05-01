@@ -38,6 +38,7 @@ int main(int argc, char * argv[])
     bzero(test, sizeof(test));
     fstream wtf;
     wtf.open("integ.txt", fstream::out | fstream::trunc);
+    wtf << "INTEGRITY CHECK FILE" << endl;
     wtf.close();
 
     pipe_in_dbg(ts, &test, 1025);
@@ -182,7 +183,7 @@ void install_upkg_android(UserPackage * upk)
     bzero(buffer, sizeof(buffer));
 
     /**GET BASE**/
-#ifndef INTEGCHK
+#ifdef INTEGCHK
     pipe_in(stream, &buffer, 1025);
 #else
     pipe_in_dbg(stream, &buffer, 1025);
@@ -199,7 +200,7 @@ void install_upkg_android(UserPackage * upk)
     send_ack_android();
 
     /**GET CONTEXT**/
-#ifndef INTEGCHK
+#ifdef INTEGCHK
     pipe_in(stream, &buffer, 1025);
 #else
     pipe_in_dbg(stream, &buffer, 1025);
@@ -222,7 +223,7 @@ void install_upkg_android(UserPackage * upk)
 
     /**PUBLIC KEY**/
     stream << *upk->publicKey;
-#ifndef INTEGCHK
+#ifdef INTEGCHK
     pipe_out(stream, &buffer, 1024);
 #else
     pipe_out_dbg(stream, &buffer, 1024);
@@ -315,9 +316,9 @@ vector<long> get_distances_android(UserPackage * upk)
     bzero(buffer, sizeof(buffer));
 
 #ifndef INTEGCHK
-        pipe_in(stream, &buffer, 1025);
+    pipe_in(stream, &buffer, 1025);
 #else
-        pipe_in_dbg(stream, &buffer, 1025);
+    pipe_in_dbg(stream, &buffer, 1025);
 #endif // INTEGCHK
 
     stream >> encrypted_distances;
@@ -351,6 +352,8 @@ bool recv_ack_android()
     chk[3]='\0';
 
     cin.get(ack, 4);
+
+    if (cin.fail()) cin.clear();
 
     if (strcmp(ack, chk) == 0) {
         delete [] chk;
@@ -423,27 +426,24 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
 void pipe_in(ostream &stream, char ** buffer, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
-    int x, y, pk;
+    int x, y, pk, charlim;
+    charlim = blocksize - 1;
 
     do
     {
         purge_nulls();
         x = 0;
-
         do
         {
             y = 0;
             cin.getline(*buffer, blocksize - x);
+            if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
             x += y;
-
             stream.write(*buffer, y);
-
             bzero(*buffer, sizeof(*buffer));
-
             pk = cin.peek();
-
-            if ((x < blocksize) && (pk > 31))
+            if ((x < charlim) && (pk > 31))
             {
                 stream << endl;
                 x++;
@@ -474,42 +474,44 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
     {
         purge_nulls();
         x = 0;
-
         do
         {
             y = 0;
             cin.getline(*buffer, blocksize - x);
+
+            if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
-            x += y;
 
             stream.write(*buffer, y);
+            wtf.write(*buffer, y);
 
-            if (y < charlim)
+            x += y;
+
+            pk = cin.peek();
+            if ((x < charlim) && (pk > 31))
             {
-                wtf.write(*buffer, y);
+                stream << endl;
+                wtf << endl;
+                x++;
+            }
+
+            if ((x==charlim) ||
+                (pk < 32) ||
+                (pk > 126))
+            {
                 wtf << endl;
                 wtf << y << "B << IN" << endl;
             }
 
             bzero(*buffer, sizeof(*buffer));
-
-            pk = cin.peek();
-
-            if ((x < charlim) && (pk > 31))
-            {
-                stream << endl;
-                //x++;
-            }
         }
-        while ((x < charlim) && (pk > 31) && (pk < 127));
+        while ((x < blocksize) && (pk > 31) && (pk < 127));
 
         send_ack_android();
         sleep(0.1);
-
     }
     while (x == charlim);
     stream.clear();
-
     wtf.close();
 }
 
