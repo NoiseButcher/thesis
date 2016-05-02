@@ -1,7 +1,7 @@
 #include "FHBB.h"
 #include <sys/resource.h>
 
-#define INTEGCHK
+//#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
  *systems. Operates as an I/O function box that pipes
@@ -346,6 +346,7 @@ bool recv_ack_android()
     chk[3]='\0';
 
     cin.get(ack, 4);
+    sleep(0.2);
 
     if (cin.fail()) cin.clear();
 
@@ -403,7 +404,7 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
         stream.read(*buffer, blocksize);
         x = stream.gcount();
         cout.write(*buffer, x);
-        sleep(0.1);
+        sleep(0.2);
         cout.flush();
         bzero(*buffer, sizeof(*buffer));
     }
@@ -426,22 +427,33 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
     do
     {
         x = 0;
+
         do
         {
-            purge_nulls();
             y = 0;
+            pk = 0;
+            purge_nulls();
+
             cin.getline(*buffer, blocksize - x);
-            sleep(0.1);
+            sleep(0.2);
 
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
 
             stream.write(*buffer, y);
-            sleep(0.1);
+            sleep(0.2);
             x += y;
 
             pk = cin.peek();
-            sleep(0.1);
+            sleep(0.2);
+
+            if ((pk == 10) && (x == (charlim-1)))
+            {
+                cin.ignore(2);
+                stream << endl;
+                x++;
+                pk = cin.peek();
+            }
 
             if ((x < charlim) && (pk > 31))
             {
@@ -451,7 +463,9 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             bzero(*buffer, sizeof(*buffer));
         }
         while ((x < charlim) && (pk > 31) && (pk < 127));
+
         send_ack_android();
+        sleep(0.2);
     }
     while (x == charlim);
     stream.clear();
@@ -516,7 +530,6 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
 
         }
         while ((x < charlim) && (pk > 31) && (pk < 127));
-        //while ((x < charlim) && (pk != 0));
 
         send_ack_android();
         sleep(0.2);

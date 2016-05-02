@@ -1,7 +1,7 @@
 #include "BBHandler.h"
 #include <sys/resource.h>
 
-#define INTEGCHK
+//#define INTEGCHK
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
@@ -406,7 +406,7 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
     {
         x = 0;
         x = read(outfd, *buffer, blocksize);
-        sleep(0.1);
+        sleep(0.2);
         stream.write(*buffer, x);
         bzero(*buffer, sizeof(*buffer));
     }
@@ -453,7 +453,9 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for socket data received." << endl;
-            //cerr << "Last block: " << *buffer << endl;
+#ifdef INTEGCHK
+            cerr << "Last block: " << *buffer << endl;
+#endif
             bzero(*buffer, sizeof(*buffer));
             exit(0);
         }
@@ -478,12 +480,14 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         stream.read(*buffer, blocksize);
         x = stream.gcount();
         write(infd, *buffer, x);
-        sleep(0.1);
+        sleep(0.2);
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for handler data received." << endl;
+#ifdef INTEGCHK
             cerr << "Last block: " << *buffer << endl;
+#endif
             bzero(*buffer, sizeof(*buffer));
             exit(0);
         }
@@ -635,17 +639,6 @@ void terminate_pipe_msg(int infd)
     char * buf = new char[2];
     bzero(buf, sizeof(buf));
     buf[0] = '\n';
-    buf[1] = '\0';
-    write(infd, buf, sizeof(buf));
-    sleep(0.1);
-    delete [] buf;
-}
-
-void terminate_pipe_msg_special(int infd)
-{
-    char * buf = new char[2];
-    bzero(buf, sizeof(buf));
-    buf[0] = '\0';
     buf[1] = '\0';
     write(infd, buf, sizeof(buf));
     sleep(0.1);
