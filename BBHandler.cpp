@@ -1,7 +1,7 @@
 #include "BBHandler.h"
 #include <sys/resource.h>
 
-//#define DEBUG
+#define INTEGCHK
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
@@ -86,7 +86,7 @@ int main(int argc, char * argv[])
             return 0;
         }
 
-#ifdef DEBUG
+#ifdef INTEGCHK
         cerr << "Connection Established on fd: " << op.sockFD << endl;
         cerr << "FHBB input on fd: " << bb_in[1] << endl;
         cerr << "FHBB output on fd: " << bb_out[0] << endl;
@@ -104,8 +104,8 @@ int main(int argc, char * argv[])
         stream.str("");
         stream.clear();
 #else
-        cout << "Let's measure some shit." << endl;
-#endif // DEBUG
+        cout << "Handler Started." << endl;
+#endif // INTEGCHK
 
         install_upkg_handler(bb_in[1], bb_out[0], &buffer,
                              &op, 1024);
@@ -201,6 +201,7 @@ void display_positions_handler(int infd, int outfd, char ** buffer,
     stringstream stream;
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
     cout << stream.str();
+    send_ack_pipe(infd);
 
 }
 
@@ -429,7 +430,7 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
     {
         x = 0;
         x = read(outfd, *buffer, blocksize);
-        sleep(0.1);
+        sleep(0.2);
         write_to_socket(buffer, x, sl);
     }
     while (x == blocksize);
@@ -447,12 +448,12 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         x = 0;
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
-        sleep(0.1);
         terminate_pipe_msg(infd);
+        sleep(0.2);
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for socket data received." << endl;
-            cerr << "Last block: " << *buffer << endl;
+            //cerr << "Last block: " << *buffer << endl;
             bzero(*buffer, sizeof(*buffer));
             exit(0);
         }
@@ -634,6 +635,17 @@ void terminate_pipe_msg(int infd)
     char * buf = new char[2];
     bzero(buf, sizeof(buf));
     buf[0] = '\n';
+    buf[1] = '\0';
+    write(infd, buf, sizeof(buf));
+    sleep(0.1);
+    delete [] buf;
+}
+
+void terminate_pipe_msg_special(int infd)
+{
+    char * buf = new char[2];
+    bzero(buf, sizeof(buf));
+    buf[0] = '\0';
     buf[1] = '\0';
     write(infd, buf, sizeof(buf));
     sleep(0.1);

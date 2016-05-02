@@ -71,4 +71,5 @@ bool recv_ack_pipe(int outfd);
 bool send_ack_socket(ServerLink * sl);
 bool recv_ack_socket(ServerLink * sl);
 void terminate_pipe_msg(int infd);
+void terminate_pipe_msg_special(int infd);
 #endif

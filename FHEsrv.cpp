@@ -33,7 +33,7 @@ int main(int argc, char * argv[])
 
     cout << "FHE Scheme generated." << endl;
 
-    prepare_server_socket(&sl, argv);
+    if (prepare_server_socket(&sl, argv) != 1) exit(2);
 
     cout << "Connection open for clients." << endl;
 
@@ -83,7 +83,8 @@ int main(int argc, char * argv[])
             }
             else
             {
-                cout << "Error Accepting Client" << endl;
+                cerr << "Socket Error: accept()" << endl;
+                exit(2);
             }
         }
         /**
@@ -91,7 +92,8 @@ int main(int argc, char * argv[])
         **/
         else
         {
-            cout << "FUCK OFF WE'RE FULL" << endl;
+            cout << "Unable to accept new users, server at capacity,";
+            cout << endl;
         }
     }
     /**
@@ -131,7 +133,12 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     stream.str("");
     stream.clear();
 
-    recv_ack(sl);
+    if (!recv_ack(sl))
+    {
+        cerr << "No ACK received from client " << sl->thisClient;
+        cerr << "." << endl;
+        exit(0);
+    }
 
     cout << "Base File streaming complete." << endl;
 
@@ -144,7 +151,12 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     stream.str("");
     stream.clear();
 
-    recv_ack(sl);
+    if (!recv_ack(sl))
+    {
+        cerr << "No ACK received from client " << sl->thisClient;
+        cerr << "." << endl;
+        exit(0);
+    }
 
     cout << "Context Stream Complete." << endl;
 
@@ -164,7 +176,12 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     stream.str("");
     stream.clear();
 
-    send_ack(sl);
+    if (!send_ack(sl))
+    {
+        cerr << "No ACK sent to client " << sl->thisClient;
+        cerr << "." << endl;
+        exit(0);
+    }
 
     cout << "Client install complete." << endl;
 
@@ -370,10 +387,9 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
     **/
     if (!send_ack(sl))
     {
-#ifdef DEBUG
-        cout << "Socket buffer error." << endl;
+        cerr << "No ACK sent to client " << sl->thisClient;
+        cerr << "." << endl;
         exit(0);
-#endif
     }
 
     delete [] buffer;
@@ -434,10 +450,9 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
     **/
     if (!recv_ack(sl))
     {
-#ifdef DEBUG
-        cout << "Socket buffer error, no ACK." << endl;
+        cerr << "No ACK received from client " << sl->thisClient;
+        cerr << "." << endl;
         exit(0);
-#endif
     }
 
     delete [] buffer;
@@ -559,8 +574,8 @@ int prepare_server_socket(ServerLink * sl, char * argv[])
 
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
-        cerr << "Error opening socket." << endl;
-		return -1;
+        cerr << "Socket Error: socket()" << endl;
+		return 2;
     }
 
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
@@ -571,8 +586,8 @@ int prepare_server_socket(ServerLink * sl, char * argv[])
 	if (bind(sl->sockFD, (struct sockaddr *)&sl->servAddr,
             sizeof(sl->servAddr)) < 0)
     {
-		cerr << "Failed to bind server to socket." << endl;
-		return -1;
+        cerr << "Socket Error: bind()" << endl;
+		return 2;
 	}
 
 	listen(sl->sockFD, sl->blocklen);
@@ -610,20 +625,6 @@ int write_to_socket(char ** buffer, int blocksize, ClientLink * sl)
     p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
     return p;
-}
-
-/**************
- *Send update message to client,
- *so it can continue work.
- *************/
-void send_server_update(ClientLink * sl)
-{
-    char * buffer = new char[1025];
-    stringstream stream("UPDATED");
-
-    stream_to_socket(stream, &buffer, sl, 1024);
-
-    delete [] buffer;
 }
 
 /*******************************

@@ -1,7 +1,7 @@
 #include "FHBB.h"
 #include <sys/resource.h>
 
-//#define INTEGCHK
+#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
  *systems. Operates as an I/O function box that pipes
@@ -36,6 +36,7 @@ int main(int argc, char * argv[])
     ts.str("");
     ts.clear();
     bzero(test, sizeof(test));
+
     fstream wtf;
     wtf.open("integ.txt", fstream::out | fstream::trunc);
     wtf << "INTEGRITY CHECK FILE" << endl;
@@ -166,6 +167,7 @@ void display_positions(vector<long> d)
         i++;
     }
     while (d[i] > 0);
+    recv_ack_android();
 }
 
 /*************ANDROID FUNCTIONS***************/
@@ -262,14 +264,14 @@ int send_location_android(UserPackage * upk, int x, int y)
 #else
         pipe_in_dbg(stream, &buffer, 1025);
 #endif // INTEGCHK
-
         stream >> *pk;
+        stream.str("");
+        stream.clear();
+
 
         Ctxt output(*pk);
 
         output = encrypt_location(x, y, *pk);
-        stream.str("");
-        stream.clear();
 
         stream << output;
 #ifndef INTEGCHK
@@ -423,18 +425,21 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
 
     do
     {
-        purge_nulls();
         x = 0;
         do
         {
+            purge_nulls();
             y = 0;
             cin.getline(*buffer, blocksize - x);
             sleep(0.1);
+
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
+
             stream.write(*buffer, y);
             sleep(0.1);
             x += y;
+
             pk = cin.peek();
             sleep(0.1);
 
@@ -445,7 +450,7 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             }
             bzero(*buffer, sizeof(*buffer));
         }
-        while ((x < blocksize) && (pk > 31) && (pk < 127));
+        while ((x < charlim) && (pk > 31) && (pk < 127));
         send_ack_android();
     }
     while (x == charlim);
@@ -465,24 +470,41 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
 
     do
     {
-        purge_nulls();
         x = 0;
+
         do
         {
+            pk = 0;
             y = 0;
+
+            purge_nulls();
+
             cin.getline(*buffer, blocksize - x);
-            sleep(0.1);
+            sleep(0.2);
+
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
+
             stream.write(*buffer, y);
-            sleep(0.1);
-            wtf.write(*buffer, y);
-            sleep(0.1);
+            sleep(0.2);
+
+            if (y < charlim) wtf.write(*buffer, y);
+            sleep(0.2);
 
             x += y;
 
             pk = cin.peek();
             sleep(0.1);
+
+            if ((pk == 10) && (x == (charlim-1)))
+            {
+                cin.ignore(2);
+                stream << endl;
+                wtf << endl;
+                x++;
+                pk = cin.peek();
+            }
+
             if ((x < charlim) && (pk > 31))
             {
                 stream << endl;
@@ -490,23 +512,20 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
                 x++;
             }
 
-            if ((x==charlim) ||
-                (pk < 32) ||
-                (pk > 126))
-            {
-                wtf << endl;
-                wtf << y << "B << IN" << endl;
-            }
-
             bzero(*buffer, sizeof(*buffer));
+
         }
-        while ((x < blocksize) && (pk > 31) && (pk < 127));
+        while ((x < charlim) && (pk > 31) && (pk < 127));
+        //while ((x < charlim) && (pk != 0));
 
         send_ack_android();
-        sleep(0.1);
+        sleep(0.2);
     }
     while (x == charlim);
     stream.clear();
+
+    wtf << endl;
+    wtf << x << " Bytes DL on exit, pk val: " << pk << endl;
     wtf.close();
 }
 
@@ -527,7 +546,7 @@ void pipe_out_dbg(istream &stream, char** buffer, int blocksize)
         stream.read(*buffer, blocksize);
         x = stream.gcount();
         cout.write(*buffer, x);
-        sleep(0.1);
+        sleep(0.2);
         cout.flush();
 
         if (x < blocksize)

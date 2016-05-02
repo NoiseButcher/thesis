@@ -94,7 +94,6 @@ struct ClientLink {
     ServerData * server;
     int sockFD;
     int xfer;
-    bool flag;
 };
 
 /**
@@ -121,7 +120,6 @@ int prepare_server_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize,
                        ClientLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ClientLink * sl);
-void send_server_update(ClientLink * sl);
 bool send_ack(ClientLink * sl);
 bool send_nak(ClientLink * sl);
 bool recv_ack(ClientLink * sl);
