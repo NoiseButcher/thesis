@@ -406,7 +406,6 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
     {
         x = 0;
         x = read(outfd, *buffer, blocksize);
-        sleep(0.2);
         stream.write(*buffer, x);
         bzero(*buffer, sizeof(*buffer));
     }
@@ -430,7 +429,6 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
     {
         x = 0;
         x = read(outfd, *buffer, blocksize);
-        sleep(0.2);
         write_to_socket(buffer, x, sl);
     }
     while (x == blocksize);
@@ -449,7 +447,6 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         x = stream_from_socket(buffer, blocksize, sl);
         write(infd, *buffer, x);
         terminate_pipe_msg(infd);
-        sleep(0.2);
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for socket data received." << endl;
@@ -480,7 +477,6 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         stream.read(*buffer, blocksize);
         x = stream.gcount();
         write(infd, *buffer, x);
-        sleep(0.2);
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
@@ -508,14 +504,12 @@ bool send_ack_pipe(int infd)
     ack[2] = 'K';
     if (write(infd, ack, sizeof(ack)) == sizeof(ack))
     {
-        sleep(0.1);
         terminate_pipe_msg(infd);
         delete [] ack;
         return true;
     }
     else
     {
-        sleep(0.1);
         delete [] ack;
         return false;
     }
@@ -533,14 +527,12 @@ bool send_nak_pipe(int infd)
     ack[2] = 'K';
     if (write(infd, ack, sizeof(ack)) == sizeof(ack))
     {
-        sleep(0.1);
         terminate_pipe_msg(infd);
         delete [] ack;
         return true;
     }
     else
     {
-        sleep(0.1);
         delete [] ack;
         return false;
     }
@@ -561,7 +553,6 @@ bool recv_ack_pipe(int outfd)
     ack[3] = '\0';
 
     read(outfd, chk, sizeof(chk));
-    sleep(0.1);
     chk[3] = '\0';
 
     if (strcmp(ack, chk) == 0)
@@ -641,6 +632,5 @@ void terminate_pipe_msg(int infd)
     buf[0] = '\n';
     buf[1] = '\0';
     write(infd, buf, sizeof(buf));
-    sleep(0.1);
     delete [] buf;
 }
