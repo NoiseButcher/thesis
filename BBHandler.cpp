@@ -1,6 +1,7 @@
 #include "BBHandler.h"
 #include <sys/resource.h>
 
+#define BUFFSIZE    1024
 //#define INTEGCHK
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
@@ -19,9 +20,12 @@ int main(int argc, char * argv[])
     pid_t blackbox;
     int bb_in[2];
     int bb_out[2];
-    char * buffer = new char[1025];
-    bzero(buffer, sizeof(buffer));
+    char * buffer = new char[BUFFSIZE+1];
     stringstream stream;
+
+    bzero(buffer, sizeof(buffer));
+    stream.str("");
+    stream.clear();
 
     /**
     Check input arguments.
@@ -86,43 +90,27 @@ int main(int argc, char * argv[])
             return 0;
         }
 
-#ifdef INTEGCHK
-        cerr << "Connection Established on fd: " << op.sockFD << endl;
-        cerr << "FHBB input on fd: " << bb_in[1] << endl;
-        cerr << "FHBB output on fd: " << bb_out[0] << endl;
-        stream.str("Spawn");
-        handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        stream.str("");
-        stream.clear();
-        pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        stream.clear();
-        stream << " more Overlords!";
-        handler_to_pipe(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        stream.str("");
-        stream.clear();
-        pipe_to_handler(stream, bb_in[1], bb_out[0], &buffer, 1024);
-        stream.str("");
-        stream.clear();
-#else
         cout << "Handler Started." << endl;
-#endif // INTEGCHK
 
         install_upkg_handler(bb_in[1], bb_out[0], &buffer,
-                             &op, 1024);
+                             &op, BUFFSIZE);
 
-        get_gps_handler(bb_in[1], bb_out[0], &buffer, 1024);
+        get_gps_handler(bb_in[1], bb_out[0], &buffer, BUFFSIZE,
+                        stream);
 
         send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
-                              1024);
+                              BUFFSIZE);
 
         get_distance_handler(bb_in[1], bb_out[0], &buffer, &op,
-                             1024);
+                             BUFFSIZE);
 
-        display_positions_handler(bb_in[1], bb_out[0], &buffer, 1024);
+        display_positions_handler(bb_in[1], bb_out[0], &buffer,
+                                  BUFFSIZE, stream);
 
         while(true)
         {
-            get_gps_handler(bb_in[1], bb_out[0], &buffer, 1024);
+            get_gps_handler(bb_in[1], bb_out[0], &buffer, BUFFSIZE,
+                            stream);
 
             if (!recv_ack_pipe(bb_out[0]))
             {
@@ -134,19 +122,20 @@ int main(int argc, char * argv[])
             send_ack_socket(&op);
 
             send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
-                              1024);
+                              BUFFSIZE);
 
             get_distance_handler(bb_in[1], bb_out[0], &buffer,
-                                 &op, 1024);
+                                 &op, BUFFSIZE);
 
             display_positions_handler(bb_in[1], bb_out[0], &buffer,
-                                      1024);
+                                      BUFFSIZE, stream);
         }
 
         close(bb_out[0]);
         close(bb_in[1]);
     }
 
+    delete [] buffer;
     return 0;
 }
 
@@ -159,9 +148,8 @@ int main(int argc, char * argv[])
  *As it is an integer there is no decimal precision.
  **************************/
 void get_gps_handler(int infd, int outfd, char ** buffer,
-                       int blocksize)
+                       int blocksize, stringstream &stream)
 {
-    stringstream stream;
     string input;
 
     cout << "Enter a position:" << endl;
@@ -196,13 +184,15 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
  *one mode.
  **********************/
 void display_positions_handler(int infd, int outfd, char ** buffer,
-                               int blocksize)
+                               int blocksize, stringstream &stream)
 {
-    stringstream stream;
+    stream.str("");
+    stream.clear();
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
     cout << stream.str();
     send_ack_pipe(infd);
-
+    stream.str("");
+    stream.clear();
 }
 
 /**********************************

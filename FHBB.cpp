@@ -1,6 +1,7 @@
 #include "FHBB.h"
 #include <sys/resource.h>
 
+#define BUFFSIZE    1024
 //#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
@@ -13,50 +14,30 @@ int main(int argc, char * argv[])
 {
     UserPackage me;
     vector<long> them;
+    stringstream stream;
+    char * buffer = new char[BUFFSIZE+2];
+    bzero(buffer, sizeof(buffer));
+
     if (argc != 1)
     {
         cerr << "./FHBB_x" << endl;
         return 0;
     }
 
-#ifdef INTEGCHK
-    stringstream ts;
-    char * test = new char[1026];
-    ts.str("");
-    ts.clear();
-    bzero(test, sizeof(test));
-    fstream wtf;
-    wtf.open("integ.txt", fstream::out | fstream::trunc);
-    wtf << "INTEGRITY CHECK FILE" << endl;
-    wtf.close();
-    pipe_in_dbg(ts, &test, 1025);
-    pipe_out_dbg(ts, &test, 1024);
-    ts.str("");
-    ts.clear();
-    bzero(test, sizeof(test));
-    pipe_in_dbg(ts, &test, 1025);
-    pipe_out_dbg(ts, &test, 1024);
-    ts.str("");
-    ts.clear();
-    bzero(test, sizeof(test));
-    delete [] test;
-    cin.sync();
-    cout.flush();
-#endif
-
-    install_upkg_android(&me);
-    pair <int, int> loc = get_gps();
-    send_location_android(&me, loc.first, loc.second);
-    them = get_distances_android(&me);
+    install_upkg_android(&me, &buffer);
+    pair <int, int> loc = get_gps(&buffer, stream);
+    send_location_android(&me, loc.first, loc.second, &buffer);
+    them = get_distances_android(&me, &buffer);
     display_positions(them);
     while (true)
     {
-        loc = get_gps();
+        loc = get_gps(&buffer, stream);
         send_ack_android();
-        send_location_android(&me, loc.first, loc.second);
-        them = get_distances_android(&me);
+        send_location_android(&me, loc.first, loc.second, &buffer);
+        them = get_distances_android(&me, &buffer);
         display_positions(them);
     }
+    delete [] buffer;
     return 0;
 }
 
@@ -68,22 +49,22 @@ int main(int argc, char * argv[])
  *by 1000.
  *As it is an integer there is no decimal precision.
  **************************/
-pair<int, int> get_gps()
+pair<int, int> get_gps(char ** buffer, stringstream &input)
 {
 	int lat, lng;
-	stringstream input;
-	char * buffer = new char[1026];
-	bzero(buffer, sizeof(buffer));
+
+	bzero(*buffer, sizeof(*buffer));
 	input.str("");
 	input.clear();
+
 	cout << "X:";
 	cout.flush();
 
 #ifndef INTEGCHK
-    pipe_in(input, &buffer, 1025);
+    pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
 #else
-    pipe_in_dbg(input, &buffer, 1025);
+    pipe_in_dbg(input, buffer, BUFFSIZE);
     sleep(0.1);
 #endif // INTEGCHK
 
@@ -94,17 +75,17 @@ pair<int, int> get_gps()
 	cout.flush();
 
 #ifndef INTEGCHK
-    pipe_in(input, &buffer, 1025);
+    pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
 #else
-    pipe_in_dbg(input, &buffer, 1025);
+    pipe_in_dbg(input, buffer, BUFFSIZE);
     sleep(0.1);
 #endif // INTEGCHK
 
 	input >> lng;
     input.str("");
 	input.clear();
-	delete [] buffer;
+
 	return make_pair(lat, lng);
 }
 
@@ -151,18 +132,18 @@ void display_positions(vector<long> d)
  *Android mode install.
  *Reads from standard i/o.
  *******************/
-void install_upkg_android(UserPackage * upk)
+void install_upkg_android(UserPackage * upk, char ** buffer)
 {
     stringstream stream;
-    char * buffer = new char[1026];
     stream.str("");
     stream.clear();
-    bzero(buffer, sizeof(buffer));
+
+    bzero(*buffer, sizeof(*buffer));
 
 #ifndef INTEGCHK
-    pipe_in(stream, &buffer, 1025);
+    pipe_in(stream, buffer, BUFFSIZE);
 #else
-    pipe_in_dbg(stream, &buffer, 1025);
+    pipe_in_dbg(stream, &buffer, BUFFSIZE);
 #endif // INTEGCHK
 
     readContextBase(stream, upk->m, upk->p, upk->r,
@@ -174,9 +155,9 @@ void install_upkg_android(UserPackage * upk)
     send_ack_android();
 
 #ifndef INTEGCHK
-    pipe_in(stream, &buffer, 1025);
+    pipe_in(stream, buffer, BUFFSIZE);
 #else
-    pipe_in_dbg(stream, &buffer, 1025);
+    pipe_in_dbg(stream, &buffer, BUFFSIZE);
 #endif // INTEGCHK
 
     stream >> *upk->context;
@@ -193,14 +174,13 @@ void install_upkg_android(UserPackage * upk)
     stream << *upk->publicKey;
 
 #ifndef INTEGCHK
-    pipe_out(stream, &buffer, 1024);
+    pipe_out(stream, buffer, BUFFSIZE);
 #else
-    pipe_out_dbg(stream, &buffer, 1024);
+    pipe_out_dbg(stream, buffer, BUFFSIZE);
 #endif // INTEGCHK
 
     stream.str("");
     stream.clear();
-    delete [] buffer;
     if (!recv_ack_android())
     {
         cerr << "ABORT ABORT" << endl;
@@ -212,21 +192,23 @@ void install_upkg_android(UserPackage * upk)
  *Sends my location, encrypted with all of the public keys,
  *to the FHBB cout file descriptor.
  *****************/
-int send_location_android(UserPackage * upk, int x, int y)
+int send_location_android(UserPackage * upk, int x, int y,
+                          char ** buffer)
 {
     stringstream stream;
-    char * buffer = new char[1026];
     stream.str("");
     stream.clear();
-    bzero(buffer, sizeof(buffer));
+
+    bzero(*buffer, sizeof(*buffer));
+
     while (recv_ack_android() == true)
     {
         FHEPubKey * pk = new FHEPubKey(*upk->context);
 
 #ifndef INTEGCHK
-        pipe_in(stream, &buffer, 1025);
+        pipe_in(stream, buffer, BUFFSIZE);
 #else
-        pipe_in_dbg(stream, &buffer, 1025);
+        pipe_in_dbg(stream, buffer, BUFFSIZE);
 #endif // INTEGCHK
 
         stream >> *pk;
@@ -237,49 +219,50 @@ int send_location_android(UserPackage * upk, int x, int y)
         stream << output;
 
 #ifndef INTEGCHK
-        pipe_out(stream, &buffer, 1024);
+        pipe_out(stream, buffer, BUFFSIZE);
 #else
-        pipe_out_dbg(stream, &buffer, 1024);
+        pipe_out_dbg(stream, buffer, BUFFSIZE);
 #endif // INTEGCHK
 
         stream.str("");
         stream.clear();
         delete pk;
     }
+
     if (!recv_ack_android())
     {
         cerr << "ABORT ABORT" << endl;
         exit(0);
     }
-    delete [] buffer;
     return 1;
 }
 
 /***********************
  *Android mode distance recovery.
  **********************/
-vector<long> get_distances_android(UserPackage * upk)
+vector<long> get_distances_android(UserPackage * upk, char ** buffer)
 {
-    vector<long> d;
     stringstream stream;
-    Ctxt encrypted_distances(*upk->publicKey);
-    char * buffer = new char[1026];
+    vector<long> d;
+
     stream.str("");
     stream.clear();
-    bzero(buffer, sizeof(buffer));
+    bzero(*buffer, sizeof(*buffer));
 
+    Ctxt encrypted_distances(*upk->publicKey);
 #ifndef INTEGCHK
-    pipe_in(stream, &buffer, 1025);
+    pipe_in(stream, buffer, BUFFSIZE);
 #else
-    pipe_in_dbg(stream, &buffer, 1025);
+    pipe_in_dbg(stream, buffer, BUFFSIZE);
 #endif // INTEGCHK
 
     stream >> encrypted_distances;
     stream.str("");
     stream.clear();
+
     send_ack_android();
+
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
-    delete [] buffer;
     return d;
 }
 
@@ -368,8 +351,8 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
 void pipe_in(ostream &stream, char ** buffer, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
-    int x, y, pk, charlim;
-    charlim = blocksize - 1;
+    int x, y, pk, blocklim;
+    blocklim = blocksize + 1;
     do
     {
         x = 0;
@@ -378,30 +361,30 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             y = 0;
             pk = 0;
             purge_nulls();
-            cin.getline(*buffer, blocksize - x);
+            cin.getline(*buffer, blocklim - x);
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
             stream.write(*buffer, y);
             x += y;
             pk = cin.peek();
-            if ((pk == 10) && (x == (charlim-1)))
+            if ((pk == 10) && (x == (blocksize-1)))
             {
                 cin.ignore(2);
                 stream << endl;
                 x++;
                 pk = cin.peek();
             }
-            if ((x < charlim) && (pk > 31))
+            if ((x < blocksize) && (pk > 31))
             {
                 stream << endl;
                 x++;
             }
             bzero(*buffer, sizeof(*buffer));
         }
-        while ((x < charlim) && (pk > 31) && (pk < 127));
+        while ((x < blocksize) && (pk > 31) && (pk < 127));
         send_ack_android();
     }
-    while (x == charlim);
+    while (x == blocksize);
     stream.clear();
 }
 
@@ -410,7 +393,7 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
     int x, y, pk, charlim;
-    charlim = blocksize - 1;
+    charlim = blocksize - 1; //1024
     fstream wtf;
     wtf.open("integ.txt", fstream::out | fstream::app);
     wtf << "<<<INPUT>>>" << endl;
@@ -423,14 +406,14 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
             pk = 0;
             y = 0;
             purge_nulls();
-            cin.getline(*buffer, blocksize - x);
+            cin.getline(*buffer, blocksize - x); //1025-x
             if (cin.fail()) cin.clear();
             y = cin.gcount() - 1;
             stream.write(*buffer, y);
-            if (y < charlim) wtf.write(*buffer, y);
+            if (y < charlim) wtf.write(*buffer, y); //x < 1024
             x += y;
             pk = cin.peek();
-            if ((pk == 10) && (x == (charlim-1)))
+            if ((pk == 10) && (x == (charlim-1))) //x == 1023
             {
                 cin.ignore(2);
                 stream << endl;
@@ -438,7 +421,7 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
                 x++;
                 pk = cin.peek();
             }
-            if ((x < charlim) && (pk > 31))
+            if ((x < charlim) && (pk > 31)) //x < 1024
             {
                 stream << endl;
                 wtf << endl;
@@ -446,10 +429,10 @@ void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
             }
             bzero(*buffer, sizeof(*buffer));
         }
-        while ((x < charlim) && (pk > 31) && (pk < 127));
+        while ((x < charlim) && (pk > 31) && (pk < 127)); //x < 1024
         send_ack_android();
     }
-    while (x == charlim);
+    while (x == charlim); // x == 1024
     stream.clear();
     wtf << endl;
     wtf << x << " Bytes DL on exit, pk val: " << pk << endl;

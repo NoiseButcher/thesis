@@ -37,19 +37,27 @@ struct UserPackage
 /**
 ALL MODE FUNCTIONS
 **/
-pair<int, int> get_gps();
+//pair<int, int> get_gps();
+pair<int, int> get_gps(char ** buffer, stringstream &input);
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk);
 void display_positions(vector<long> d);
 
 /**
 ANDROID FUNCTIONS
 **/
-void install_upkg_android(UserPackage * upk);
+/*
 int send_location_android(UserPackage * upk, int x, int y);
 vector<long> get_distances_android(UserPackage * upk);
+*/
+void install_upkg_android(UserPackage * upk, char ** buffer);
+int send_location_android(UserPackage * upk, int x, int y,
+                          char ** buffer);
+vector<long> get_distances_android(UserPackage * upk, char ** buffer);
+
 bool recv_ack_android();
 void send_ack_android();
 void purge_nulls();
+
 void pipe_out(istream &stream, char** buffer, int blocksize);
 void pipe_in(ostream &stream, char ** buffer, int blocksize);
 void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize);

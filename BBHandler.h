@@ -36,10 +36,16 @@ struct ServerLink
 /**
 ALL MODE FUNCTIONS
 **/
+/*
 void get_gps_handler(int infd, int outfd, char ** buffer,
                        int blocksize);
 void display_positions_handler(int infd, int outfd, char ** buffer,
                                int blocksize);
+*/
+void get_gps_handler(int infd, int outfd, char ** buffer,
+                       int blocksize, stringstream &stream);
+void display_positions_handler(int infd, int outfd, char ** buffer,
+                               int blocksize, stringstream &stream);
 void install_upkg_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize);
 void send_location_handler(int infd, int outfd, char ** buffer,
