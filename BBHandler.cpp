@@ -33,9 +33,10 @@ int main(int argc, char * argv[])
     for the PC version. The android version uses
     the i/o to talk to the Java software.
     **/
-    if (argc != 3)
+    if (argc != 4)
     {
-        cout << "./BBHandler_x portnum localhost(hostname)" << endl;
+        cerr << "./BBHandler_x portnum localhost(hostname) FHBB_path" << endl;
+        delete [] buffer;
         return 0;
     }
 
@@ -57,7 +58,6 @@ int main(int argc, char * argv[])
             exit(0);
         }
 
-
         /**Make cout pipe directly to the parent**/
         close(1);
         if ((dup2(bb_out[1], 1) != 1) ||
@@ -69,10 +69,11 @@ int main(int argc, char * argv[])
         }
 
         /**Run the black box **/
-        execl("/home/sharky/Thesis/Guy_Code/FHBB_x", "FHBB_x", NULL);
+        // --->/home/sharky/Thesis/Guy_Code/FHBB_x <--- e.g my path
+        execl(argv[3], "FHBB_x", NULL);
 
         cerr << "FHBB execution failure." << endl;
-
+        delete [] buffer;
         return 1;
     }
     /**Parent process, this is the handler for the FHBB binary**/
@@ -84,10 +85,12 @@ int main(int argc, char * argv[])
         /**
         Connect to the server or throw an error if it can't.
         **/
-        if (!(prepare_socket(&op, argv)))
+        if (prepare_socket(&op, argv) == 2)
         {
-            cout << "Server Unavailable.";
-            return 0;
+            delete [] buffer;
+            close(bb_out[0]);
+            close(bb_in[1]);
+            exit(2);
         }
 
         cout << "Handler Started." << endl;
@@ -116,6 +119,9 @@ int main(int argc, char * argv[])
             {
                 cerr << "Main loop ACK not received from FHBB";
                 cerr << endl;
+                delete [] buffer;
+                close(bb_out[0]);
+                close(bb_in[1]);
                 exit(0);
             }
 
@@ -131,10 +137,11 @@ int main(int argc, char * argv[])
                                       BUFFSIZE, stream);
         }
 
+        delete [] buffer;
         close(bb_out[0]);
         close(bb_in[1]);
+        return 0;
     }
-
     delete [] buffer;
     return 0;
 }
@@ -282,14 +289,14 @@ int prepare_socket(ServerLink * sl, char * argv[])
 
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
-        cerr << "Error opening socket." << endl;
-		return -1;
+        cerr << "Socket Error: socket()" << endl;
+		return 2;
     }
 
     if((sl->serv=gethostbyname(argv[2]))==NULL)
     {
-        cerr << "Host not found." << endl;
-		return -1;
+        cerr << "Socket error: gethostbyname()" << endl;
+		return 2;
     }
 
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
@@ -303,8 +310,8 @@ int prepare_socket(ServerLink * sl, char * argv[])
                             (struct sockaddr *)&sl->servAddr,
                             sizeof(sl->servAddr))) < 0)
      {
-        cerr << "Failure connecting to server." << endl;
-		return -1;
+        cerr << "Socket Error: connect()" << endl;
+		return 2;
      }
 
      return 1;
@@ -440,10 +447,9 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for socket data received." << endl;
-#ifdef INTEGCHK
-            cerr << "Last block: " << *buffer << endl;
-#endif
-            bzero(*buffer, sizeof(*buffer));
+            close(infd);
+            close(outfd);
+            delete [] *buffer;
             exit(0);
         }
         bzero(*buffer, sizeof(*buffer));
@@ -471,10 +477,9 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         if (!recv_ack_pipe(outfd))
         {
             cerr << "No ACK for handler data received." << endl;
-#ifdef INTEGCHK
-            cerr << "Last block: " << *buffer << endl;
-#endif
-            bzero(*buffer, sizeof(*buffer));
+            close(infd);
+            close(outfd);
+            delete [] *buffer;
             exit(0);
         }
         bzero(*buffer, sizeof(*buffer));

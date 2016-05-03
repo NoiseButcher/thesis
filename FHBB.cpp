@@ -21,6 +21,7 @@ int main(int argc, char * argv[])
     if (argc != 1)
     {
         cerr << "./FHBB_x" << endl;
+        delete [] buffer;
         return 0;
     }
 
@@ -38,7 +39,7 @@ int main(int argc, char * argv[])
         display_positions(them);
     }
     delete [] buffer;
-    return 0;
+    return 1;
 }
 
 /*********LOGISTICS AND FHE FUNCTIONS***********/
@@ -184,6 +185,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     if (!recv_ack_android())
     {
         cerr << "ABORT ABORT" << endl;
+        delete [] buffer;
         exit(0);
     }
 }
@@ -232,6 +234,7 @@ int send_location_android(UserPackage * upk, int x, int y,
     if (!recv_ack_android())
     {
         cerr << "ABORT ABORT" << endl;
+        delete [] buffer;
         exit(0);
     }
     return 1;

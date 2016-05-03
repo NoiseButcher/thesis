@@ -22,8 +22,8 @@ int main(int argc, char * argv[])
     **/
     if (argc != 3)
     {
-        cout << "./FHEops_x portnum maxclients" << endl;
-        return 0;
+        cerr << "./FHEops_x portnum maxclients" << endl;
+        exit(0);
     }
 
     sd.maxthreads = atoi(argv[2]);
@@ -33,7 +33,10 @@ int main(int argc, char * argv[])
 
     cout << "FHE Scheme generated." << endl;
 
-    if (prepare_server_socket(&sl, argv) != 1) exit(2);
+    if (prepare_server_socket(&sl, argv) != 1)
+    {
+        exit(2);
+    }
 
     cout << "Connection open for clients." << endl;
 
@@ -137,6 +140,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     {
         cerr << "No ACK received from client " << sl->thisClient;
         cerr << "." << endl;
+        delete [] buffer;
         exit(0);
     }
 
@@ -155,6 +159,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     {
         cerr << "No ACK received from client " << sl->thisClient;
         cerr << "." << endl;
+        delete [] buffer;
         exit(0);
     }
 
@@ -180,6 +185,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     {
         cerr << "No ACK sent to client " << sl->thisClient;
         cerr << "." << endl;
+        delete [] buffer;
         exit(0);
     }
 
@@ -389,6 +395,7 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
     {
         cerr << "No ACK sent to client " << sl->thisClient;
         cerr << "." << endl;
+        delete [] buffer;
         exit(0);
     }
 
@@ -452,6 +459,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
     {
         cerr << "No ACK received from client " << sl->thisClient;
         cerr << "." << endl;
+        delete [] buffer;
         exit(0);
     }
 
