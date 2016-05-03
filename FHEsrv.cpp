@@ -1,6 +1,7 @@
 #include "FHEsrv.h"
 #include <sys/resource.h>
 
+#define BUFFSIZE    1024
 //#define DEBUG
 /***********************************
  *Server program for operating on encrypted data.
@@ -122,17 +123,13 @@ int main(int argc, char * argv[])
  *Public Key to a connected client.
  *Socket mode version.
  **********************************/
-void generate_upkg(ServerData * sd, ClientLink * sl)
+void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
 {
     stringstream stream;
-    char * buffer = new char[1025];
-
-#ifdef DEBUG
-    cout << "Streaming base data..." << endl;
-#endif // DEBUG
+    bzero(*buffer, sizeof(*buffer));
 
     writeContextBase(stream, *sd->context);
-    stream_to_socket(stream, &buffer, sl, 1024);
+    stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
 
@@ -146,12 +143,8 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
 
     cout << "Base File streaming complete." << endl;
 
-#ifdef DEBUG
-    cout << "Streaming Context..." << endl;;
-#endif // DEBUG
-
     stream << *sd->context;
-    stream_to_socket(stream, &buffer, sl, 1024);
+    stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
 
@@ -165,17 +158,9 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
 
     cout << "Context Stream Complete." << endl;
 
-#ifdef DEBUG
-    cout << "Obtaining client public key." << endl;
-#endif // DEBUG
-
-    socket_to_stream(stream, &buffer, sl ,1024);
+    socket_to_stream(stream, buffer, sl, BUFFSIZE);
     Cluster cx(*sd->context);
     stream >> *cx.thisKey;
-
-#ifdef DEBUG
-    cout << "Appending to Cluster." << endl;
-#endif // DEBUG
 
     sd->cluster.push_back(cx);
     stream.str("");
@@ -190,8 +175,6 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
     }
 
     cout << "Client install complete." << endl;
-
-    delete [] buffer;
 }
 
 /*****************************
@@ -203,6 +186,8 @@ void generate_upkg(ServerData * sd, ClientLink * sl)
 void *handle_client(void *param)
 {
     ClientLink me = *(ClientLink*) param;
+    char * buffer = new char[BUFFSIZE+1];
+    bzero(buffer, sizeof(buffer));
     struct timeval timeout;
     fd_set incoming;
     fd_set master;
@@ -216,7 +201,7 @@ void *handle_client(void *param)
     cout << "New client " << me.thisClient << " accepted on ";
     cout << me.sockFD << "." << endl;
 
-    generate_upkg(me.server, &me);
+    generate_upkg(me.server, &me, &buffer);
 
     /**This barrier is to allow other clients to add
       *this client's public key to their encrypted
@@ -232,7 +217,7 @@ void *handle_client(void *param)
 
     pthread_mutex_lock(&me.server->mutex);
 
-    get_client_position(me.server, &me, me.thisClient);
+    get_client_position(me.server, &me, me.thisClient, &buffer);
 
     if (me.thisClient == 1)
     {
@@ -242,7 +227,7 @@ void *handle_client(void *param)
         pthread_mutex_lock(&me.server->mutex);
     }
 
-    calculate_distances(me.server, &me, me.thisClient);
+    calculate_distances(me.server, &me, me.thisClient, &buffer);
 
     pthread_mutex_unlock(&me.server->mutex);
     pthread_barrier_wait(&me.server->popcap);
@@ -286,7 +271,7 @@ void *handle_client(void *param)
             cout << "Client " << me.thisClient;
             cout << " has the mutex for updating their location." << endl;
 
-            get_client_position(me.server, &me, me.thisClient);
+            get_client_position(me.server, &me, me.thisClient, &buffer);
 
             pthread_mutex_unlock(&me.server->mutex);
 
@@ -305,7 +290,7 @@ void *handle_client(void *param)
             cout << "Client " << me.thisClient;
             cout << " has the mutex for updating distances." << endl;
 
-            calculate_distances(me.server, &me, me.thisClient);
+            calculate_distances(me.server, &me, me.thisClient, &buffer);
 
             pthread_mutex_unlock(&me.server->mutex);
             cout << "Client " << me.thisClient;
@@ -323,8 +308,8 @@ void *handle_client(void *param)
             cout << "Client " << me.thisClient;
             cout << " has the mutex for uploading their new position." << endl;
 
-            get_client_position(me.server, &me, me.thisClient);
-            calculate_distances(me.server, &me, me.thisClient);
+            get_client_position(me.server, &me, me.thisClient, &buffer);
+            calculate_distances(me.server, &me, me.thisClient, &buffer);
 
             pthread_mutex_unlock(&me.server->mutex);
             cout << "Client " << me.thisClient;
@@ -336,6 +321,7 @@ void *handle_client(void *param)
             cout << " user input timeout." << endl;
         }
     }
+    delete [] buffer;
 }
 
 /*******************************
@@ -343,15 +329,12 @@ void *handle_client(void *param)
  *with all of the public keys on the server at
  *any one time.
  *******************************/
-void get_client_position(ServerData * sd, ClientLink * sl, int id)
+void get_client_position(ServerData * sd, ClientLink * sl, int id,
+                         char ** buffer)
 {
     stringstream stream;
-    char * buffer = new char[1025];
+    bzero(*buffer, sizeof(*buffer));
     int k;
-
-#ifdef DEBUG
-    cout << "Acquiring encrypted positions" << endl;
-#endif // DEBUG
 
     /**Erase previous locations if they exist**/
     if (sd->cluster[id].thisLoc.size() > 0)
@@ -369,11 +352,11 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
         sock_handshake(sl);
         Ctxt newusr(*sd->cluster[k].thisKey);
         stream << *sd->cluster[k].thisKey;
-        stream_to_socket(stream, &buffer, sl, 1024);
+        stream_to_socket(stream, buffer, sl, BUFFSIZE);
         stream.str("");
         stream.clear();
 
-        socket_to_stream(stream, &buffer, sl, 1024);
+        socket_to_stream(stream, buffer, sl, BUFFSIZE);
         stream >> newusr;
         stream.str("");
         stream.clear();
@@ -382,11 +365,6 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
     }
 
     send_nak(sl);
-
-#ifdef DEBUG
-    cout << "Locations for client " << sl->thisClient;
-    cout << " loaded." << endl;
-#endif
 
     /**
     Send ACK when the ciphertext is acquired.
@@ -398,8 +376,6 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
         delete [] buffer;
         exit(0);
     }
-
-    delete [] buffer;
 }
 
 /**********************
@@ -408,10 +384,11 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id)
  *sends the distances as an encrypted vector back to this client
  *via socket.
  *********************/
-void calculate_distances(ServerData * sd, ClientLink * sl, int id)
+void calculate_distances(ServerData * sd, ClientLink * sl, int id,
+                         char ** buffer)
 {
     stringstream stream;
-    char * buffer = new char[1025];
+    bzero(*buffer, sizeof(*buffer));
     int k;
 
     /**Erase previous distances if they exist**/
@@ -439,16 +416,11 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
                           sd->cluster[id].theirLocs,
                           *sd->cluster[id].thisKey);
 
-#ifdef DEBUG
-    cout << "Output for client " << sl->thisClient;
-    cout << " generated." << endl;
-#endif // DEBUG
-
     /**
     Push to socket.
     **/
     stream << out;
-    stream_to_socket(stream, &buffer, sl, 1024);
+    stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
 
@@ -462,8 +434,6 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id)
         delete [] buffer;
         exit(0);
     }
-
-    delete [] buffer;
 }
 
 /*********FHE FUNCTIONS*******************/
@@ -486,10 +456,6 @@ int generate_scheme(ServerData * sd) {
     m = FindM(security, L, c, p, d, 3, 0);
     sd->context = new FHEcontext(m, p, r);
     buildModChain(*sd->context, L, c);
-
-#ifdef DEBUG
-    cout << "Scheme Generation Complete." << endl;
-#endif
 
     return 1;
 }
@@ -617,7 +583,6 @@ int stream_from_socket(char ** buffer, int blocksize, ClientLink * sl)
     sl->xfer = read(sl->sockFD, *buffer, blocksize);
     p = sl->xfer;
     return p;
-
 }
 
 /*****

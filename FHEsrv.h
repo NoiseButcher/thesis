@@ -99,11 +99,11 @@ struct ClientLink {
 /**
 LOGISTICS FUNCTIONS
 **/
-void generate_upkg(ServerData * sd, ClientLink * sl);
+void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer);
 void *handle_client(void *param);
 void *handle_population(void *param);
-void get_client_position(ServerData * sd, ClientLink * sl, int id);
-void calculate_distances(ServerData * sd, ClientLink * sl, int id);
+void get_client_position(ServerData * sd, ClientLink * sl, int id, char ** buffer);
+void calculate_distances(ServerData * sd, ClientLink * sl, int id, char ** buffer);
 
 /**
 FHE FUNCTIONS
