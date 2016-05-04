@@ -3,6 +3,7 @@
 
 #define BUFFSIZE    1024
 //#define DEBUG
+//#define TIMING
 /***********************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
@@ -103,6 +104,8 @@ int main(int argc, char * argv[])
     /**
     Wipe all of the thread data.
     **/
+    cout << "Terminating threads" << endl;
+
     for (int i = 0; i < sd.users; i++)
     {
         pthread_join(sd.threadID[i], NULL);
@@ -143,7 +146,17 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
 
     cout << "Base File streaming complete." << endl;
 
-    stream << *sd->context;
+    try
+    {
+        stream << *sd->context;
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
+
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
@@ -160,7 +173,16 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
 
     socket_to_stream(stream, buffer, sl, BUFFSIZE);
     Cluster cx(*sd->context);
-    stream >> *cx.thisKey;
+    try
+    {
+        stream >> *cx.thisKey;
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
 
     sd->cluster.push_back(cx);
     stream.str("");
@@ -262,63 +284,68 @@ void *handle_client(void *param)
             me.server->users)
         {
             recv_ack(&me);
-
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " requesting mutex: update." << endl;
-
+#endif
             pthread_mutex_lock(&me.server->mutex);
-
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " has the mutex for updating their location." << endl;
-
+#endif
             get_client_position(me.server, &me, me.thisClient, &buffer);
 
             pthread_mutex_unlock(&me.server->mutex);
-
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex:update." << endl;
-
+#endif
             pthread_barrier_wait(&me.server->popcap);
 
             pthread_barrier_wait(&me.server->popcap);
-
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " requesting mutex:update" << endl;
-
+#endif
             pthread_mutex_lock(&me.server->mutex);
-
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " has the mutex for updating distances." << endl;
-
+#endif
             calculate_distances(me.server, &me, me.thisClient, &buffer);
 
             pthread_mutex_unlock(&me.server->mutex);
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex:update" << endl;
+#endif
         }
 
         if (FD_ISSET(me.sockFD, &incoming))
         {
             recv_ack(&me);
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " requesting mutex." << endl;
-
+#endif
             pthread_mutex_lock(&me.server->mutex);
-
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " has the mutex for uploading their new position." << endl;
-
+#endif
             get_client_position(me.server, &me, me.thisClient, &buffer);
             calculate_distances(me.server, &me, me.thisClient, &buffer);
 
             pthread_mutex_unlock(&me.server->mutex);
+#ifdef DEBUG
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex." << endl;
+#endif
         }
         else
         {
             cout << "Client " << me.thisClient;
-            cout << " user input timeout." << endl;
+            cout << " waiting for user input.." << endl;
         }
     }
     delete [] buffer;
@@ -351,13 +378,31 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
     {
         sock_handshake(sl);
         Ctxt newusr(*sd->cluster[k].thisKey);
-        stream << *sd->cluster[k].thisKey;
+        try
+        {
+            stream << *sd->cluster[k].thisKey;
+        }
+        catch (...)
+        {
+            cerr << "HElib Exception" << endl;
+            delete [] buffer;
+            exit(3);
+        }
         stream_to_socket(stream, buffer, sl, BUFFSIZE);
         stream.str("");
         stream.clear();
 
         socket_to_stream(stream, buffer, sl, BUFFSIZE);
-        stream >> newusr;
+        try
+        {
+            stream >> newusr;
+        }
+        catch (...)
+        {
+            cerr << "HElib Exception" << endl;
+            delete [] buffer;
+            exit(3);
+        }
         stream.str("");
         stream.clear();
 
@@ -409,17 +454,36 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
         }
     }
 
+#ifdef TIMING
+    struct timeval clk;
+    double msecs_x, msecs_y;
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
     /**
     Generate output ciphertexts for the client
     **/
     Ctxt out = generate_output(sd->cluster[id].thisLoc[id],
                           sd->cluster[id].theirLocs,
                           *sd->cluster[id].thisKey);
-
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "generate_output() " << (msecs_y - msecs_x) << "ms" << endl;
+#endif
     /**
     Push to socket.
     **/
-    stream << out;
+    try
+    {
+        stream << out;
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
@@ -453,9 +517,23 @@ int generate_scheme(ServerData * sd) {
     long d = 0;
     ZZX G;
 
+#ifdef TIMING
+    struct timeval clk;
+    double msecs_x, msecs_y;
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
+
     m = FindM(security, L, c, p, d, 3, 0);
     sd->context = new FHEcontext(m, p, r);
     buildModChain(*sd->context, L, c);
+
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "generate_scheme() " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
+#endif
 
     return 1;
 }
@@ -519,21 +597,80 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
     Ctxt purge(pk);
     pvec.push_back(1);
 
+#ifdef TIMING
+    struct timeval clk;
+    double msecs_x, msecs_y;
+#endif
+
     for (int i = 1; i < pk.getContext().ea->size(); i++)
     {
 		pvec.push_back(0);
 	}
 
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
     pk.getContext().ea->encrypt(purge, pk, pvec);
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "encrypt(empty) " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
 
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
 	c1.addCtxt(c2, true); /**c1 = Enc[(x1-x2) (y1-y2) 0 0 ...] **/
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "addCtxt() " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
+
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
 	c1.square(); /**c1 = Enc[(x1-x2)^2 (y1-y2)^2 0 0 ...] **/
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "ctxt.square() " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
 
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
 	Ctxt inv(c1); /**inv = Enc[(y1-y2)^2 0 .. 0 (x1-x2)^2] **/
-	inv.getContext().ea->rotate(inv, -1);
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "invert ctxt " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
 
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
+	inv.getContext().ea->rotate(inv, -1);
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "rotate ctxt " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
+
+#endif
 	c1+=inv; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. 0 (x1-x2)^2] **/
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_x = clk.tv_usec * 1000;
+#endif
 	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
+#ifdef TIMING
+    gettimeofday(&clk, NULL);
+    msecs_y = clk.tv_usec * 1000;
+    cout << "multiply ctxt " << (msecs_y - msecs_x);
+    cout << "ms" << endl;
+#endif
 	return c1;
 }
 

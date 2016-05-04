@@ -1,11 +1,11 @@
 #ifndef BBHANDLER_H
 #define BBHANDLER_H
 
-#include <unistd.h>
 #include <NTL/lzz_pXFactoring.h>
 #include <NTL/matrix.h>
 #include "FHE.h"
 #include "EncryptedArray.h"
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -17,7 +17,7 @@
 #include <math.h>
 #include <fstream>
 #include <sstream>
-#include <iostream>
+#include <signal.h>
 
 /**********
  *Data structure to handle server connections.
@@ -36,12 +36,6 @@ struct ServerLink
 /**
 ALL MODE FUNCTIONS
 **/
-/*
-void get_gps_handler(int infd, int outfd, char ** buffer,
-                       int blocksize);
-void display_positions_handler(int infd, int outfd, char ** buffer,
-                               int blocksize);
-*/
 void get_gps_handler(int infd, int outfd, char ** buffer,
                        int blocksize, stringstream &stream);
 void display_positions_handler(int infd, int outfd, char ** buffer,

@@ -88,6 +88,7 @@ int main(int argc, char * argv[])
         if (prepare_socket(&op, argv) == 2)
         {
             delete [] buffer;
+            kill(blackbox, SIGKILL);
             close(bb_out[0]);
             close(bb_in[1]);
             exit(2);
@@ -120,6 +121,7 @@ int main(int argc, char * argv[])
                 cerr << "Main loop ACK not received from FHBB";
                 cerr << endl;
                 delete [] buffer;
+                kill(blackbox, SIGKILL);
                 close(bb_out[0]);
                 close(bb_in[1]);
                 exit(0);
@@ -138,10 +140,16 @@ int main(int argc, char * argv[])
         }
 
         delete [] buffer;
+        kill(blackbox, SIGKILL);
         close(bb_out[0]);
         close(bb_in[1]);
         return 0;
     }
+    kill(blackbox, SIGKILL);
+    close(bb_out[0]);
+    close(bb_in[1]);
+    close(bb_out[1]);
+    close(bb_in[0]);
     delete [] buffer;
     return 0;
 }
@@ -240,6 +248,8 @@ void install_upkg_handler(int infd, int outfd, char ** buffer,
 void send_location_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
+    int i = 0;
+
     cerr << "Getting location data" << endl;
     while (recv_ack_socket(sl))
     {
@@ -251,10 +261,21 @@ void send_location_handler(int infd, int outfd, char ** buffer,
         cerr << ".";
         pipe_to_socket(infd, outfd, buffer, sl, blocksize); //EncLoc
         cerr << ".";
+        i++;
     }
     cerr << endl;
-    cerr << "Locations sent to server." << endl;
+
     send_nak_pipe(infd);
+
+    if (i == 0)
+    {
+        cerr << "Server crash, HElib error probably" << endl;
+        delete [] buffer;
+        exit(3);
+    }
+
+    cerr << "Locations sent to server." << endl;
+
     if (recv_ack_socket(sl))
     {
         send_ack_pipe(infd);

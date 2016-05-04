@@ -10,14 +10,12 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <stdio.h>
-#include <netdb.h>
 #include <math.h>
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <exception>
 
 struct UserPackage
 {
@@ -37,18 +35,13 @@ struct UserPackage
 /**
 ALL MODE FUNCTIONS
 **/
-//pair<int, int> get_gps();
-pair<int, int> get_gps(char ** buffer, stringstream &input);
+pair<int, int> get_gps(char ** buffer);
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk);
 void display_positions(vector<long> d);
 
 /**
 ANDROID FUNCTIONS
 **/
-/*
-int send_location_android(UserPackage * upk, int x, int y);
-vector<long> get_distances_android(UserPackage * upk);
-*/
 void install_upkg_android(UserPackage * upk, char ** buffer);
 int send_location_android(UserPackage * upk, int x, int y,
                           char ** buffer);

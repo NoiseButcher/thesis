@@ -14,9 +14,10 @@ int main(int argc, char * argv[])
 {
     UserPackage me;
     vector<long> them;
-    stringstream stream;
     char * buffer = new char[BUFFSIZE+2];
     bzero(buffer, sizeof(buffer));
+    cout.flush();
+    cin.sync();
 
     if (argc != 1)
     {
@@ -26,13 +27,13 @@ int main(int argc, char * argv[])
     }
 
     install_upkg_android(&me, &buffer);
-    pair <int, int> loc = get_gps(&buffer, stream);
+    pair <int, int> loc = get_gps(&buffer);
     send_location_android(&me, loc.first, loc.second, &buffer);
     them = get_distances_android(&me, &buffer);
     display_positions(them);
     while (true)
     {
-        loc = get_gps(&buffer, stream);
+        loc = get_gps(&buffer);
         send_ack_android();
         send_location_android(&me, loc.first, loc.second, &buffer);
         them = get_distances_android(&me, &buffer);
@@ -50,16 +51,18 @@ int main(int argc, char * argv[])
  *by 1000.
  *As it is an integer there is no decimal precision.
  **************************/
-pair<int, int> get_gps(char ** buffer, stringstream &input)
+pair<int, int> get_gps(char ** buffer)
 {
 	int lat, lng;
-
+    stringstream input;
 	bzero(*buffer, sizeof(*buffer));
 	input.str("");
 	input.clear();
 
-	cout << "X:";
-	cout.flush();
+	input << "X:";
+	pipe_out(input, buffer, BUFFSIZE);
+	input.str("");
+	input.clear();
 
 #ifndef INTEGCHK
     pipe_in(input, buffer, BUFFSIZE);
@@ -72,8 +75,11 @@ pair<int, int> get_gps(char ** buffer, stringstream &input)
 	input >> lat;
     input.str("");
 	input.clear();
-	cout << "Y:";
-	cout.flush();
+
+	input << "Y:";
+	pipe_out(input, buffer, BUFFSIZE);
+	input.str("");
+	input.clear();
 
 #ifndef INTEGCHK
     pipe_in(input, buffer, BUFFSIZE);
@@ -147,8 +153,18 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     pipe_in_dbg(stream, &buffer, BUFFSIZE);
 #endif // INTEGCHK
 
-    readContextBase(stream, upk->m, upk->p, upk->r,
-                    upk->gens, upk->ords);
+    try
+    {
+        readContextBase(stream, upk->m, upk->p,
+                        upk->r, upk->gens, upk->ords);
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
+
     upk->context = new FHEcontext(upk->m, upk->p, upk->r,
                                   upk->gens, upk->ords);
     stream.str("");
@@ -161,7 +177,17 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     pipe_in_dbg(stream, &buffer, BUFFSIZE);
 #endif // INTEGCHK
 
-    stream >> *upk->context;
+    try
+    {
+        stream >> *upk->context;
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
+
     stream.str("");
     stream.clear();
     upk->secretKey = new FHESecKey(*upk->context);
@@ -172,7 +198,17 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
     send_ack_android();
-    stream << *upk->publicKey;
+
+    try
+    {
+        stream << *upk->publicKey;
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
 
 #ifndef INTEGCHK
     pipe_out(stream, buffer, BUFFSIZE);
@@ -200,6 +236,7 @@ int send_location_android(UserPackage * upk, int x, int y,
     stringstream stream;
     stream.str("");
     stream.clear();
+    int i = 0;
 
     bzero(*buffer, sizeof(*buffer));
 
@@ -213,12 +250,34 @@ int send_location_android(UserPackage * upk, int x, int y,
         pipe_in_dbg(stream, buffer, BUFFSIZE);
 #endif // INTEGCHK
 
-        stream >> *pk;
+        try
+        {
+            stream >> *pk;
+        }
+        catch (...)
+        {
+            cerr << "HElib Exception" << endl;
+            delete pk;
+            delete [] buffer;
+            exit(3);
+        }
+
         stream.str("");
         stream.clear();
         Ctxt output(*pk);
         output = encrypt_location(x, y, *pk);
-        stream << output;
+
+        try
+        {
+            stream << output;
+        }
+        catch (...)
+        {
+            cerr << "HElib Exception" << endl;
+            delete pk;
+            delete [] buffer;
+            exit(3);
+        }
 
 #ifndef INTEGCHK
         pipe_out(stream, buffer, BUFFSIZE);
@@ -229,6 +288,14 @@ int send_location_android(UserPackage * upk, int x, int y,
         stream.str("");
         stream.clear();
         delete pk;
+        i++;
+    }
+
+    if (i == 0)
+    {
+        cerr << "Server crash, probably HElib error" << endl;
+        delete [] buffer;
+        exit(3);
     }
 
     if (!recv_ack_android())
@@ -259,7 +326,17 @@ vector<long> get_distances_android(UserPackage * upk, char ** buffer)
     pipe_in_dbg(stream, buffer, BUFFSIZE);
 #endif // INTEGCHK
 
-    stream >> encrypted_distances;
+    try
+    {
+        stream >> encrypted_distances;
+    }
+    catch (...)
+    {
+        cerr << "HElib Exception" << endl;
+        delete [] buffer;
+        exit(3);
+    }
+
     stream.str("");
     stream.clear();
 

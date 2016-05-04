@@ -7,7 +7,6 @@
 #include "FHE.h"
 #include "EncryptedArray.h"
 #include <stdlib.h>
-#include <argp.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -19,7 +18,7 @@
 #include <sstream>
 #include <fstream>
 #include <iostream>
-#include <semaphore.h>
+#include <exception>
 
 /**
 *Class for storing client specific information, the amount of
