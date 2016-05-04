@@ -2,8 +2,7 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    1024
-//#define TIMING
-//#define MEMTEST
+#define MEMTEST
 //#define TRANSFER
 /***********************************
 Client side program to be handled as
@@ -43,7 +42,7 @@ int main(int argc, char * argv[])
 
 #ifdef MEMTEST
     fstream fs;
-    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs.open("upkg.mem", fstream::out | fstream::app);
     fs << "Size of FHE scheme = " << sizeof(me) << "B" << endl;
     fs.close();
 #endif // MEMTEST
@@ -104,7 +103,7 @@ Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 
 #ifdef MEMTEST
     fstream fs;
-    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs.open("upkg.mem", fstream::out | fstream::app);
     fs << "Size of Encrypted Location = " << sizeof(cloc);
     fs << "B" << endl;
     fs.close();
@@ -266,7 +265,7 @@ vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk,
 
 #ifdef MEMTEST
     fstream fs;
-    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs.open("upkg.mem", fstream::out | fstream::app);
     fs << "Size of Encrypted Distances = ";
     fs << sizeof(encrypted_distances) << "B" << endl;
     fs.close();

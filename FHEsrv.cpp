@@ -2,15 +2,15 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    1024
-//#define TIMING
-//#define MEMTEST
+#define TIMING
+#define MEMTEST
 //#define TRANSFER
 //#define THREADSYNC
-/***********************************
+/**********************************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
  *and distributes it amongst connected clients.
- ************************************/
+ *********************************************/
 int main(int argc, char * argv[])
 {
     ServerData sd;
@@ -83,7 +83,7 @@ int main(int argc, char * argv[])
     return 0;
 }
 
-/**********LOGISTICS FUNCTIONS*********************/
+/**LOGISTICS FUNCTIONS**/
 /**********************************
  *Stream the Context Base, Context and
  *Public Key to a connected client.
@@ -142,10 +142,10 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
 
 #ifdef MEMTEST
     fstream fs;
-    fs.open("cluster.mem", fstream::out :: fstream::app);
+    fs.open("cluster.mem", fstream::out | fstream::app);
     fs << "Server Memory Information" << endl;
     fs << "Number of Clients = " << sd->users << endl;
-    fs << "Size of Cluster = " << sizeof(sd->cluster) << "B" << endl;
+    fs << "Size of Cluster = " << (sizeof(sd->cluster[0]) * sd->cluster.size()) << "B" << endl;
     fs.close();
 #endif // MEMTEST
 
@@ -382,10 +382,12 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     }
 
 #ifdef TIMING
+    fstream fs;
+    fs.open("server.time", fstream::out | fstream::app);
     struct timeval clk;
     double msecs_x, msecs_y;
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
     Ctxt out = generate_output(sd->cluster[id].thisLoc[id],
@@ -393,8 +395,10 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
                           *sd->cluster[id].thisKey);
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
-    cout << "generate_output() " << (msecs_y - msecs_x) << "ms" << endl;
+    msecs_y = clk.tv_usec / 1000;
+    fs << "generate_output() " << (msecs_y - msecs_x) << "ms" << endl;
+    fs << sd->users << " clients online." << endl;
+    fs.close();
 #endif
 
     try
@@ -419,7 +423,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     }
 }
 
-/*********FHE FUNCTIONS*******************/
+/**FHE FUNCTIONS**/
 /*******************************
  *Generate the FHE scheme with the specified
  *parameters. Writes the scheme to the ServerData
@@ -438,11 +442,11 @@ int generate_scheme(ServerData * sd) {
 
 #ifdef MEMTEST
     fstream fs;
-    fs.open("cluster.mem", fstream::out :: fstream::app);
+    fs.open("cluster.mem", fstream::out | fstream::app);
     fs << "Server Memory Information" << endl;
     fs << "P = " << p << ", R = " << r << ", L = " << L << endl;
     fs.close();
-    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs.open("upkg.mem", fstream::out | fstream::app);
     fs << "Client Memory Information" << endl;
     fs << "P = " << p << ", R = " << r << ", L = " << L << endl;
     fs.close();
@@ -452,12 +456,12 @@ int generate_scheme(ServerData * sd) {
 #ifndef MEMTEST
     fstream fs;
 #endif
-    fs.open("server.time", fstream::out :: fstream::app);
+    fs.open("server.time", fstream::out | fstream::app);
     fs << "Server Timing Information" << endl;
     struct timeval clk;
     double msecs_x, msecs_y;
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
     m = FindM(security, L, c, p, d, 3, 0);
@@ -466,7 +470,7 @@ int generate_scheme(ServerData * sd) {
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "generate_scheme() " << (msecs_y - msecs_x);
     fs << "ms" << endl;
     fs.close();
@@ -520,7 +524,7 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 
 #ifdef TIMING
     fstream fs;
-    fs.open("server.time", fstream::out :: fstream::app);
+    fs.open("server.time", fstream::out | fstream::app);
     struct timeval clk;
     double msecs_x, msecs_y;
 #endif
@@ -532,62 +536,62 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
     pk.getContext().ea->encrypt(purge, pk, pvec);
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "encrypt(empty) " << (msecs_y - msecs_x);
     fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
 	c1.addCtxt(c2, true); /**c1 = Enc[(x1-x2) (y1-y2) 0 0 ...] **/
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "addCtxt() " << (msecs_y - msecs_x);
     fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
 	c1.square(); /**c1 = Enc[(x1-x2)^2 (y1-y2)^2 0 0 ...] **/
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "ctxt.square() " << (msecs_y - msecs_x);
     fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
 	Ctxt inv(c1); /**inv = Enc[(y1-y2)^2 0 .. 0 (x1-x2)^2] **/
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "invert ctxt " << (msecs_y - msecs_x);
     fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
 	inv.getContext().ea->rotate(inv, -1);
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "rotate ctxt " << (msecs_y - msecs_x);
     fs << "ms" << endl;
 
@@ -597,14 +601,14 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_x = clk.tv_usec * 1000;
+    msecs_x = clk.tv_usec / 1000;
 #endif
 
 	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
 
 #ifdef TIMING
     gettimeofday(&clk, NULL);
-    msecs_y = clk.tv_usec * 1000;
+    msecs_y = clk.tv_usec / 1000;
     fs << "multiply ctxt " << (msecs_y - msecs_x);
     fs << "ms" << endl;
     fs.close();
@@ -613,7 +617,7 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 	return c1;
 }
 
-/***************SOCKET FUNCTIONS**********************/
+/**SOCKET FUNCTIONS**/
 /*****************************
  *Listen on a port provided in the
  *arguments.
