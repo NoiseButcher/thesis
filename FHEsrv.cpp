@@ -2,72 +2,48 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    1024
-//#define DEBUG
 //#define TIMING
+//#define MEMTEST
+//#define TRANSFER
+//#define THREADSYNC
 /***********************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
  *and distributes it amongst connected clients.
  ************************************/
-
 int main(int argc, char * argv[])
 {
-    /**
-    Data structures and buffers
-    **/
     ServerData sd;
     ServerLink sl;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
-
-    /**
-    Argument check... just in case...
-    **/
     if (argc != 3)
     {
         cerr << "./FHEops_x portnum maxclients" << endl;
         exit(0);
     }
-
     sd.maxthreads = atoi(argv[2]);
     pthread_t freads[sd.maxthreads];
-
     generate_scheme(&sd);
-
     cout << "FHE Scheme generated." << endl;
-
     if (prepare_server_socket(&sl, argv) != 1)
     {
         exit(2);
     }
-
     cout << "Connection open for clients." << endl;
-
     sd.users = 0;
-
     while (true)
     {
-        /**
-        Handle new connections if there is space.
-        **/
         if (sd.users < sd.maxthreads)
         {
-            /**
-            Generate all of the necessary data
-            structures to handle a new user.
-            **/
             sl.len = sizeof(sl.clientAddr);
             ClientLink client;
             client.id = freads[sd.users];
             client.server = &sd;
             sd.threadID.push_back(client.id);
-
             if ((client.sockFD = accept(sl.sockFD,
                                         (struct sockaddr *)&sl.clientAddr,
                                         &sl.len)) > 0)
             {
-                /**Barrier management code, rebuild the barrier
-                 *whenever a new user connects.
-                 **/
                 if (sd.users > 1)
                 {
                     pthread_barrier_destroy(&sd.popcap);
@@ -80,7 +56,6 @@ int main(int argc, char * argv[])
                     pthread_barrier_init(&sd.popcap,
                                         NULL, 2);
                 }
-
                 pthread_create(&freads[sd.users],
                                NULL,
                                handle_client,
@@ -92,31 +67,19 @@ int main(int argc, char * argv[])
                 exit(2);
             }
         }
-        /**
-        Refuse connection if maximum users have been reached.
-        **/
         else
         {
             cout << "Unable to accept new users, server at capacity,";
             cout << endl;
         }
     }
-    /**
-    Wipe all of the thread data.
-    **/
     cout << "Terminating threads" << endl;
-
     for (int i = 0; i < sd.users; i++)
     {
         pthread_join(sd.threadID[i], NULL);
     }
-
-    /**
-    Destroy synchronisation things.
-    **/
     pthread_barrier_destroy(&sd.popcap);
     pthread_mutex_destroy(&sd.mutex);
-
     return 0;
 }
 
@@ -130,12 +93,10 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
 {
     stringstream stream;
     bzero(*buffer, sizeof(*buffer));
-
     writeContextBase(stream, *sd->context);
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
-
     if (!recv_ack(sl))
     {
         cerr << "No ACK received from client " << sl->thisClient;
@@ -143,9 +104,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
         delete [] buffer;
         exit(0);
     }
-
     cout << "Base File streaming complete." << endl;
-
     try
     {
         stream << *sd->context;
@@ -156,11 +115,9 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
         delete [] buffer;
         exit(3);
     }
-
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
-
     if (!recv_ack(sl))
     {
         cerr << "No ACK received from client " << sl->thisClient;
@@ -168,9 +125,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
         delete [] buffer;
         exit(0);
     }
-
     cout << "Context Stream Complete." << endl;
-
     socket_to_stream(stream, buffer, sl, BUFFSIZE);
     Cluster cx(*sd->context);
     try
@@ -183,11 +138,19 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
         delete [] buffer;
         exit(3);
     }
-
     sd->cluster.push_back(cx);
+
+#ifdef MEMTEST
+    fstream fs;
+    fs.open("cluster.mem", fstream::out :: fstream::app);
+    fs << "Server Memory Information" << endl;
+    fs << "Number of Clients = " << sd->users << endl;
+    fs << "Size of Cluster = " << sizeof(sd->cluster) << "B" << endl;
+    fs.close();
+#endif // MEMTEST
+
     stream.str("");
     stream.clear();
-
     if (!send_ack(sl))
     {
         cerr << "No ACK sent to client " << sl->thisClient;
@@ -195,7 +158,6 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
         delete [] buffer;
         exit(0);
     }
-
     cout << "Client install complete." << endl;
 }
 
@@ -213,34 +175,20 @@ void *handle_client(void *param)
     struct timeval timeout;
     fd_set incoming;
     fd_set master;
-
     pthread_mutex_lock(&me.server->mutex);
-
     me.thisClient = me.server->users;
-
     me.server->users++;
-
     cout << "New client " << me.thisClient << " accepted on ";
     cout << me.sockFD << "." << endl;
-
     generate_upkg(me.server, &me, &buffer);
-
-    /**This barrier is to allow other clients to add
-      *this client's public key to their encrypted
-      *locations**/
     pthread_mutex_unlock(&me.server->mutex);
     pthread_barrier_wait(&me.server->popcap);
-
-    /**Barrier tomfoolery to handle the first client**/
     if (me.thisClient == 0)
     {
         pthread_barrier_wait(&me.server->popcap);
     }
-
     pthread_mutex_lock(&me.server->mutex);
-
     get_client_position(me.server, &me, me.thisClient, &buffer);
-
     if (me.thisClient == 1)
     {
         pthread_mutex_unlock(&me.server->mutex);
@@ -248,24 +196,15 @@ void *handle_client(void *param)
         pthread_barrier_wait(&me.server->popcap);
         pthread_mutex_lock(&me.server->mutex);
     }
-
     calculate_distances(me.server, &me, me.thisClient, &buffer);
-
     pthread_mutex_unlock(&me.server->mutex);
     pthread_barrier_wait(&me.server->popcap);
-
-    /**Final bit of tomfoolery**/
     if (me.thisClient == 0)
     {
         pthread_barrier_wait(&me.server->popcap);
     }
-
     cout << "Client " << me.thisClient;
-    cout << " entering the mainloop." << endl;
-
-    /**
-    Primary loop to process client positions.
-    **/
+    cout << " active." << endl;
     while(true)
     {
         FD_ZERO(&incoming);
@@ -274,73 +213,80 @@ void *handle_client(void *param)
         FD_SET(me.sockFD, &master);
         incoming = master;
         select(me.sockFD + 1, &incoming, NULL, NULL, &timeout);
-
-        /**
-        Test the size of this client's location vector
-        vs the amount of users on the server, and see if it
-        needs updating.
-        **/
         if (me.server->cluster[me.thisClient].thisLoc.size() !=
             me.server->users)
         {
             recv_ack(&me);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " requesting mutex: update." << endl;
 #endif
+
             pthread_mutex_lock(&me.server->mutex);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " has the mutex for updating their location." << endl;
 #endif
-            get_client_position(me.server, &me, me.thisClient, &buffer);
 
+            get_client_position(me.server, &me, me.thisClient, &buffer);
             pthread_mutex_unlock(&me.server->mutex);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex:update." << endl;
 #endif
-            pthread_barrier_wait(&me.server->popcap);
 
             pthread_barrier_wait(&me.server->popcap);
-#ifdef DEBUG
+            pthread_barrier_wait(&me.server->popcap);
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " requesting mutex:update" << endl;
 #endif
+
             pthread_mutex_lock(&me.server->mutex);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " has the mutex for updating distances." << endl;
 #endif
-            calculate_distances(me.server, &me, me.thisClient, &buffer);
 
+            calculate_distances(me.server, &me, me.thisClient, &buffer);
             pthread_mutex_unlock(&me.server->mutex);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex:update" << endl;
 #endif
-        }
 
+        }
         if (FD_ISSET(me.sockFD, &incoming))
         {
             recv_ack(&me);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " requesting mutex." << endl;
 #endif
+
             pthread_mutex_lock(&me.server->mutex);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " has the mutex for uploading their new position." << endl;
 #endif
+
             get_client_position(me.server, &me, me.thisClient, &buffer);
             calculate_distances(me.server, &me, me.thisClient, &buffer);
-
             pthread_mutex_unlock(&me.server->mutex);
-#ifdef DEBUG
+
+#ifdef THREADSYNC
             cout << "Client " << me.thisClient;
             cout << " surrendering mutex." << endl;
 #endif
+
         }
         else
         {
@@ -362,18 +308,11 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
     stringstream stream;
     bzero(*buffer, sizeof(*buffer));
     int k;
-
-    /**Erase previous locations if they exist**/
     if (sd->cluster[id].thisLoc.size() > 0)
     {
         sd->cluster[id].thisLoc.erase(sd->cluster[id].thisLoc.begin(),
                                         sd->cluster[id].thisLoc.end());
     }
-
-    /**
-    Create temporary copy of client's public key,
-    then import key data from socket.
-    **/
     for (k = 0; k < sd->users; k++)
     {
         sock_handshake(sl);
@@ -405,15 +344,9 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         }
         stream.str("");
         stream.clear();
-
         sd->cluster[id].thisLoc.push_back(newusr);
     }
-
     send_nak(sl);
-
-    /**
-    Send ACK when the ciphertext is acquired.
-    **/
     if (!send_ack(sl))
     {
         cerr << "No ACK sent to client " << sl->thisClient;
@@ -435,17 +368,11 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     stringstream stream;
     bzero(*buffer, sizeof(*buffer));
     int k;
-
-    /**Erase previous distances if they exist**/
     if (sd->cluster[id].theirLocs.size() > 0)
     {
         sd->cluster[id].theirLocs.erase(sd->cluster[id].theirLocs.begin(),
                                     sd->cluster[id].theirLocs.end());
     }
-
-    /**
-    Get ciphertexts with the correct index from the cluster
-    **/
     for (k = 0; k < sd->cluster.size(); k++)
     {
         if (k != id)
@@ -460,9 +387,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
-    /**
-    Generate output ciphertexts for the client
-    **/
+
     Ctxt out = generate_output(sd->cluster[id].thisLoc[id],
                           sd->cluster[id].theirLocs,
                           *sd->cluster[id].thisKey);
@@ -471,9 +396,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     msecs_y = clk.tv_usec * 1000;
     cout << "generate_output() " << (msecs_y - msecs_x) << "ms" << endl;
 #endif
-    /**
-    Push to socket.
-    **/
+
     try
     {
         stream << out;
@@ -487,10 +410,6 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
-
-    /**
-    Wait for ACK.
-    **/
     if (!recv_ack(sl))
     {
         cerr << "No ACK received from client " << sl->thisClient;
@@ -517,7 +436,24 @@ int generate_scheme(ServerData * sd) {
     long d = 0;
     ZZX G;
 
+#ifdef MEMTEST
+    fstream fs;
+    fs.open("cluster.mem", fstream::out :: fstream::app);
+    fs << "Server Memory Information" << endl;
+    fs << "P = " << p << ", R = " << r << ", L = " << L << endl;
+    fs.close();
+    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs << "Client Memory Information" << endl;
+    fs << "P = " << p << ", R = " << r << ", L = " << L << endl;
+    fs.close();
+#endif // MEMTEST
+
 #ifdef TIMING
+#ifndef MEMTEST
+    fstream fs;
+#endif
+    fs.open("server.time", fstream::out :: fstream::app);
+    fs << "Server Timing Information" << endl;
     struct timeval clk;
     double msecs_x, msecs_y;
     gettimeofday(&clk, NULL);
@@ -531,8 +467,9 @@ int generate_scheme(ServerData * sd) {
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "generate_scheme() " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "generate_scheme() " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
+    fs.close();
 #endif
 
     return 1;
@@ -548,28 +485,13 @@ Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
                      const FHEPubKey &pk)
 {
     int i;
-
-    /**
-    Blank vector and ciphertext to facilitate operations
-    on server key encrypted input. pvec() is initialised with
-    as an empty vector encrypted with the server's public key.
-    **/
     Ctxt cx(pk);
     vector<long> pvec;
-
     for (int i = 0; i < pk.getContext().ea->size(); i++)
     {
 		pvec.push_back(0);
 	}
-
 	pk.getContext().ea->encrypt(cx, pk, pvec);
-
-	/**
-	Iterate over the current collection of encrypted coordinate
-	sets and create a single ciphertext corresponding to the
-	Euclidean distances between the input and all of the existing
-	co-ordinates.
-	**/
     for (i=0; i < locs.size(); i++)
     {
         Ctxt zx(locs[i]); /**Copy coordinate set i to a temporary Ctxt**/
@@ -577,7 +499,6 @@ Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
         zx.getContext().ea->shift(zx, i); /**Offset Ctxt based on index i**/
         cx+=zx; /**Add offset ciphertext to empty output**/
     }
-
     return cx;
 }
 
@@ -598,6 +519,8 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
     pvec.push_back(1);
 
 #ifdef TIMING
+    fstream fs;
+    fs.open("server.time", fstream::out :: fstream::app);
     struct timeval clk;
     double msecs_x, msecs_y;
 #endif
@@ -611,66 +534,82 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
+
     pk.getContext().ea->encrypt(purge, pk, pvec);
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "encrypt(empty) " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "encrypt(empty) " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
+
 	c1.addCtxt(c2, true); /**c1 = Enc[(x1-x2) (y1-y2) 0 0 ...] **/
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "addCtxt() " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "addCtxt() " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
+
 	c1.square(); /**c1 = Enc[(x1-x2)^2 (y1-y2)^2 0 0 ...] **/
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "ctxt.square() " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "ctxt.square() " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
+
 	Ctxt inv(c1); /**inv = Enc[(y1-y2)^2 0 .. 0 (x1-x2)^2] **/
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "invert ctxt " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "invert ctxt " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
 
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
+
 	inv.getContext().ea->rotate(inv, -1);
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "rotate ctxt " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "rotate ctxt " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
 
 #endif
-	c1+=inv; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. 0 (x1-x2)^2] **/
+
+	c1+=inv; /**c1=Enc[(x1-x2)^2+(y1-y2)^2 (y1-y2)^2 0 .. (x1-x2)^2]**/
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_x = clk.tv_usec * 1000;
 #endif
+
 	c1*=purge; /**c1 = Enc[(x1-x2)^2+(y1-y2)^2 0 0 ...] **/
+
 #ifdef TIMING
     gettimeofday(&clk, NULL);
     msecs_y = clk.tv_usec * 1000;
-    cout << "multiply ctxt " << (msecs_y - msecs_x);
-    cout << "ms" << endl;
+    fs << "multiply ctxt " << (msecs_y - msecs_x);
+    fs << "ms" << endl;
+    fs.close();
 #endif
+
 	return c1;
 }
 
@@ -682,13 +621,11 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
 int prepare_server_socket(ServerLink * sl, char * argv[])
 {
     sl->port = atoi(argv[1]);
-
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
         cerr << "Socket Error: socket()" << endl;
 		return 2;
     }
-
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
     sl->servAddr.sin_family = AF_INET;
 	sl->servAddr.sin_addr.s_addr = INADDR_ANY;
@@ -700,9 +637,7 @@ int prepare_server_socket(ServerLink * sl, char * argv[])
         cerr << "Socket Error: bind()" << endl;
 		return 2;
 	}
-
 	listen(sl->sockFD, sl->blocklen);
-
 	return 1;
 }
 
@@ -715,11 +650,8 @@ int prepare_server_socket(ServerLink * sl, char * argv[])
 *****/
 int stream_from_socket(char ** buffer, int blocksize, ClientLink * sl)
 {
-    int p;
     bzero(*buffer, sizeof(*buffer));
-    sl->xfer = read(sl->sockFD, *buffer, blocksize);
-    p = sl->xfer;
-    return p;
+    return sl->xfer = read(sl->sockFD, *buffer, blocksize);
 }
 
 /*****
@@ -730,11 +662,9 @@ int stream_from_socket(char ** buffer, int blocksize, ClientLink * sl)
 *****/
 int write_to_socket(char ** buffer, int blocksize, ClientLink * sl)
 {
-    int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
-    p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
-    return p;
+    return sl->xfer;
 }
 
 /*******************************
@@ -828,7 +758,7 @@ void stream_to_socket(istream &stream, char ** buffer,
     bzero(*buffer, sizeof(*buffer));
     int k;
 
-#ifdef DEBUG
+#ifdef TRANSFER
     int tx, totalloops;
     totalloops = 0;
     tx = 0;
@@ -841,17 +771,17 @@ void stream_to_socket(istream &stream, char ** buffer,
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
 
-#ifdef DEBUG
+#ifdef TRANSFER
         tx += k;
         totalloops++;
-#endif // DEBUG
+#endif // TRANSFER
 
     }
     while (k == blocksize);
 
-#ifdef DEBUG
+#ifdef TRANSFER
         cout << totalloops << " : " << tx << endl;
-#endif // DEBUG
+#endif // TRANSFER
 }
 
 /******************************
@@ -865,7 +795,7 @@ void socket_to_stream(ostream &stream, char ** buffer,
     bzero(*buffer, sizeof(*buffer));
     int k;
 
-#ifdef DEBUG
+#ifdef TRANSFER
     int rx, totalloops;
     totalloops = 0;
     rx = 0;
@@ -877,18 +807,17 @@ void socket_to_stream(ostream &stream, char ** buffer,
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
 
-#ifdef DEBUG
+#ifdef TRANSFER
         rx += k;
         totalloops++;
-#endif // DEBUG
+#endif // TRANSFER
 
     }
     while (k == blocksize);
-
     stream.clear();
 
-#ifdef DEBUG
+#ifdef TRANSFER
         cout << totalloops << " : " << rx;
         cout << " : " << stream.tellp() << endl;
-#endif // DEBUG
+#endif // TRANSFER
 }

@@ -11,44 +11,26 @@ FHBB binary, using the pipes to and from it.
  ************************************/
 int main(int argc, char * argv[])
 {
-    /*********************
-     *Client instance data
-     *structures and buffers
-     *for per-instance operation.
-     *********************/
     ServerLink op;
     pid_t blackbox;
     int bb_in[2];
     int bb_out[2];
     char * buffer = new char[BUFFSIZE+1];
     stringstream stream;
-
     bzero(buffer, sizeof(buffer));
     stream.str("");
     stream.clear();
-
-    /**
-    Check input arguments.
-    This only requires server information
-    for the PC version. The android version uses
-    the i/o to talk to the Java software.
-    **/
     if (argc != 4)
     {
         cerr << "./BBHandler_x portnum localhost(hostname) FHBB_path" << endl;
         delete [] buffer;
         return 0;
     }
-
     pipe(bb_in);
     pipe(bb_out);
     blackbox = fork();
-
-    /**Child process to execute FHBB and configure the I/O
-    necessary to use it**/
     if (blackbox == 0)
     {
-        /**Make cin pipe directly to the parent**/
         close(0);
         if ((dup2(bb_in[0], 0) != 0) ||
             (close(bb_in[0]) != 0) ||
@@ -57,8 +39,6 @@ int main(int argc, char * argv[])
             cerr << "FHBB standard input pipe failure." << endl;
             exit(0);
         }
-
-        /**Make cout pipe directly to the parent**/
         close(1);
         if ((dup2(bb_out[1], 1) != 1) ||
             (close(bb_out[0]) != 0) ||
@@ -67,24 +47,16 @@ int main(int argc, char * argv[])
             cerr << "FHBB standard output pipe failure." << endl;
             exit(0);
         }
-
-        /**Run the black box **/
         // --->/home/sharky/Thesis/Guy_Code/FHBB_x <--- e.g my path
         execl(argv[3], "FHBB_x", NULL);
-
         cerr << "FHBB execution failure." << endl;
         delete [] buffer;
         return 1;
     }
-    /**Parent process, this is the handler for the FHBB binary**/
     else
     {
         close(bb_out[1]);
         close(bb_in[0]);
-
-        /**
-        Connect to the server or throw an error if it can't.
-        **/
         if (prepare_socket(&op, argv) == 2)
         {
             delete [] buffer;
@@ -93,29 +65,21 @@ int main(int argc, char * argv[])
             close(bb_in[1]);
             exit(2);
         }
-
         cout << "Handler Started." << endl;
-
         install_upkg_handler(bb_in[1], bb_out[0], &buffer,
                              &op, BUFFSIZE);
-
         get_gps_handler(bb_in[1], bb_out[0], &buffer, BUFFSIZE,
                         stream);
-
         send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
                               BUFFSIZE);
-
         get_distance_handler(bb_in[1], bb_out[0], &buffer, &op,
                              BUFFSIZE);
-
         display_positions_handler(bb_in[1], bb_out[0], &buffer,
                                   BUFFSIZE, stream);
-
         while(true)
         {
             get_gps_handler(bb_in[1], bb_out[0], &buffer, BUFFSIZE,
                             stream);
-
             if (!recv_ack_pipe(bb_out[0]))
             {
                 cerr << "Main loop ACK not received from FHBB";
@@ -126,19 +90,14 @@ int main(int argc, char * argv[])
                 close(bb_in[1]);
                 exit(0);
             }
-
             send_ack_socket(&op);
-
             send_location_handler(bb_in[1], bb_out[0], &buffer, &op,
                               BUFFSIZE);
-
             get_distance_handler(bb_in[1], bb_out[0], &buffer,
                                  &op, BUFFSIZE);
-
             display_positions_handler(bb_in[1], bb_out[0], &buffer,
                                       BUFFSIZE, stream);
         }
-
         delete [] buffer;
         kill(blackbox, SIGKILL);
         close(bb_out[0]);
@@ -166,10 +125,7 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
                        int blocksize, stringstream &stream)
 {
     string input;
-
     cout << "Enter a position:" << endl;
-
-    /**Get longitude from CIN and pipe to FHBB**/
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
     cout << stream.str(); //Get "X:"
     stream.str("");
@@ -179,8 +135,6 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
     stream.clear();
-
-    /**Get latitude from CIN and pipe to FHBB**/
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
     cout << stream.str(); //Get "Y:"
     stream.str("");
@@ -249,7 +203,6 @@ void send_location_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
     int i = 0;
-
     cerr << "Getting location data" << endl;
     while (recv_ack_socket(sl))
     {
@@ -264,18 +217,14 @@ void send_location_handler(int infd, int outfd, char ** buffer,
         i++;
     }
     cerr << endl;
-
     send_nak_pipe(infd);
-
     if (i == 0)
     {
         cerr << "Server crash, HElib error probably" << endl;
         delete [] buffer;
         exit(3);
     }
-
     cerr << "Locations sent to server." << endl;
-
     if (recv_ack_socket(sl))
     {
         send_ack_pipe(infd);
@@ -307,26 +256,22 @@ void get_distance_handler(int infd, int outfd, char ** buffer,
 int prepare_socket(ServerLink * sl, char * argv[])
 {
     sl->port = atoi(argv[1]);
-
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
         cerr << "Socket Error: socket()" << endl;
 		return 2;
     }
-
     if((sl->serv=gethostbyname(argv[2]))==NULL)
     {
         cerr << "Socket error: gethostbyname()" << endl;
 		return 2;
     }
-
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
     sl->servAddr.sin_family = AF_INET;
 	memcpy((char *)&sl->serv->h_addr,
             (char *)&sl->servAddr.sin_addr.s_addr,
 			sl->serv->h_length);
 	sl->servAddr.sin_port = htons(sl->port);
-
 	if ((sl->xfer = connect(sl->sockFD,
                             (struct sockaddr *)&sl->servAddr,
                             sizeof(sl->servAddr))) < 0)
@@ -334,7 +279,6 @@ int prepare_socket(ServerLink * sl, char * argv[])
         cerr << "Socket Error: connect()" << endl;
 		return 2;
      }
-
      return 1;
 }
 
@@ -347,11 +291,8 @@ OPERATIONS.
 *****/
 int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
-    int p;
     bzero(*buffer, sizeof(*buffer));
-    sl->xfer = read(sl->sockFD, *buffer, blocksize);
-    p = sl->xfer;
-    return p;
+    return sl->xfer = read(sl->sockFD, *buffer, blocksize);
 }
 
 /*****
@@ -362,11 +303,9 @@ been lost.
 *****/
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
-    int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
-    p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
-    return p;
+    return sl->xfer;
 }
 
 /****************************
@@ -379,7 +318,6 @@ void handler_to_socket(istream &stream, char ** buffer,
 {
     bzero(*buffer, sizeof(*buffer));
     int k;
-
     do
     {
         k = 0;
@@ -419,7 +357,6 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
-
     do
     {
         x = 0;
@@ -428,7 +365,6 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
         bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
-
     stream.clear();
 }
 
@@ -442,7 +378,6 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
-
     do
     {
         x = 0;
@@ -567,10 +502,8 @@ bool recv_ack_pipe(int outfd)
     ack[1] = 'C';
     ack[2] = 'K';
     ack[3] = '\0';
-
     read(outfd, chk, sizeof(chk));
     chk[3] = '\0';
-
     if (strcmp(ack, chk) == 0)
     {
         delete [] ack;

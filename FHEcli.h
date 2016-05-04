@@ -66,9 +66,11 @@ bool send_ack(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
 bool sock_handshake(ServerLink * sl);
 int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
-                         int y);
-void install_upkg_socket(ServerLink * sl, UserPackage * upk);
-vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk);
+                         int y, char ** buffer);
+void install_upkg_socket(ServerLink * sl, UserPackage * upk,
+                         char** buffer);
+vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk,
+                                  char ** buffer);
 void stream_to_socket(istream &stream, char ** buffer,
                       ServerLink * sl, int blocksize);
 void socket_to_stream(ostream &stream, char ** buffer,

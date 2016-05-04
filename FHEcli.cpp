@@ -1,7 +1,10 @@
 #include "FHEcli.h"
 #include <sys/resource.h>
 
-//#define DEBUG
+#define BUFFSIZE    1024
+//#define TIMING
+//#define MEMTEST
+//#define TRANSFER
 /***********************************
 Client side program to be handled as
 a stand alone executable.
@@ -21,75 +24,45 @@ a stand alone executable.
  ************************************/
 int main(int argc, char * argv[])
 {
-    /*********************
-     *Client instance data
-     *structures and buffers
-     *for per-instance operation.
-     *********************/
     ServerLink op;
     UserPackage me;
     vector<long> them;
-
-    /**
-    Check input arguments.
-    This only requires server information
-    for the PC version. The android version uses
-    the i/o to talk to the Java software.
-    **/
+    char * buffer = new char[BUFFSIZE+1];
+    bzero(buffer, sizeof(buffer));
     if (argc != 3)
     {
         cout << "./FHEcli_x portnum localhost(hostname)" << endl;
         return 0;
     }
-
-    /**
-    Connect to the server or throw an error if it can't.
-    **/
-    if (!(prepare_socket(&op, argv)))
+    if (prepare_socket(&op, argv) != 1)
     {
-        cout << "Server Unavailable.";
-        return 0;
+        exit(2);
     }
-
     cout << "Connection Established." << endl;
+    install_upkg_socket(&op, &me, &buffer);
 
-    install_upkg_socket(&op, &me);
-
-    cout << "FHE Scheme installed." << endl;
+#ifdef MEMTEST
+    fstream fs;
+    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs << "Size of FHE scheme = " << sizeof(me) << "B" << endl;
+    fs.close();
+#endif // MEMTEST
 
     cout << "Enter co-ordinates:" << endl;
-
     pair <int, int> loc = get_gps();
-
-    send_location_socket(&me, &op, loc.first, loc.second);
-
-    cout << "First position sent." << endl;
-
-    them = get_distances_socket(&op, &me);
-
-    cout << "First distance calcs:" << endl;
-
+    send_location_socket(&me, &op, loc.first, loc.second, &buffer);
+    them = get_distances_socket(&op, &me, &buffer);
     display_positions(them);
-
     while (true)
     {
         cout << "Enter co-ordinates:" << endl;
-
         loc = get_gps();
-
         send_ack(&op);
-
-        send_location_socket(&me, &op, loc.first, loc.second);
-
-        cout << "Location sent." << endl;
-
-        them = get_distances_socket(&op, &me);
-
-        cout << "Distances received:" << endl;
-
+        send_location_socket(&me, &op, loc.first,
+                             loc.second, &buffer);
+        them = get_distances_socket(&op, &me, &buffer);
         display_positions(them);
     }
-
     return 0;
 }
 
@@ -105,12 +78,10 @@ pair<int, int> get_gps()
 {
 	int lat, lng;
 	string input;
-
-	cout << "X";
+	cout << "X:";
 	cin >> lat;
-	cout << "Y";
+	cout << "Y:";
 	cin >> lng;
-
 	return make_pair(lat, lng);
 }
 
@@ -121,22 +92,24 @@ pair<int, int> get_gps()
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 {
 	vector<long> loc;
-
 	loc.push_back((long)x);
 	loc.push_back((long)y);
-
 	for (int i = 2; i < pk.getContext().ea->size(); i++)
     {
 		loc.push_back(0);
 	}
-
 	Ctxt cloc(pk);
-
 	pk.getContext().ea->encrypt(cloc, pk, loc);
-
-    cout << "Location encrypted." << endl;
-
 	return cloc;
+
+#ifdef MEMTEST
+    fstream fs;
+    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs << "Size of Encrypted Location = " << sizeof(cloc);
+    fs << "B" << endl;
+    fs.close();
+#endif // MEMTEST
+
 }
 
 /*********************
@@ -148,7 +121,6 @@ Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 void display_positions(vector<long> d)
 {
     int i;
-
     do
     {
         cout << "User " << i << " is ";
@@ -166,46 +138,24 @@ void display_positions(vector<long> d)
  *a socket, then builds the local
  *scheme and key pairs.
  *****************************/
-void install_upkg_socket(ServerLink * sl, UserPackage * upk)
+void install_upkg_socket(ServerLink * sl, UserPackage * upk,
+                         char ** buffer)
 {
     stringstream ss;
-    char * buffer = new char[1025];
-
+    bzero(*buffer, sizeof(*buffer));
     cout << "Streaming base from server..." << endl;
-
-    /**
-    Stream in the context base to a local file. Where it
-    can be stored for rejoining if need be.
-    **/
-    socket_to_stream(ss, &buffer, sl, 1024);
+    socket_to_stream(ss, buffer, sl, BUFFSIZE);
     readContextBase(ss, upk->m, upk->p, upk->r, upk->gens, upk->ords);
-
     ss.str("");
     ss.clear();
-
-    cout << "Base data streaming complete." << endl;
-
     upk->context = new FHEcontext(upk->m, upk->p, upk->r,
                                   upk->gens, upk->ords);
-
     send_ack(sl);
-
     cout << "Streaming context data from server..." << endl;
-
-    /**
-    Stream in the context in blocks of 1KB.
-    **/
-    socket_to_stream(ss, &buffer, sl, 1024);
+    socket_to_stream(ss, buffer, sl, BUFFSIZE);
     ss >> *upk->context;
     ss.str("");
     ss.clear();
-
-    cout << "Context Built." << endl;
-
-    /**
-    Generate client's private and public key pair,
-    associated switching matrices encrypted array.
-    **/
     upk->secretKey = new FHESecKey(*upk->context);
     upk->publicKey = upk->secretKey;
     upk->G = upk->context->alMod.getFactorsOverZZ()[0];
@@ -213,26 +163,14 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
     addSome1DMatrices(*upk->secretKey);
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
-
-    cout << "Client FHE scheme Generated." << endl;
-
     send_ack(sl);
-
     cout << "Streaming my public key to the server." << endl;
-
     ss << *upk->publicKey;
-    stream_to_socket(ss, &buffer, sl ,1024);
+    stream_to_socket(ss, buffer, sl, BUFFSIZE);
     ss.str("");
     ss.clear();
-
-    /**
-    Wait for ACK.
-    **/
     recv_ack(sl);
-
     cout << "Preliminary install complete." << endl;
-
-    delete [] buffer;
 }
 
 /***********************
@@ -243,34 +181,29 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk)
 int prepare_socket(ServerLink * sl, char * argv[])
 {
     sl->port = atoi(argv[1]);
-
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
-        cerr << "Error opening socket." << endl;
-		return -1;
+        cerr << "Socket error: socket()" << endl;
+		return 2;
     }
-
     if((sl->serv=gethostbyname(argv[2]))==NULL)
     {
-        cerr << "Host not found." << endl;
-		return -1;
+        cerr << "Socket error: gethostbyname()" << endl;
+		return 2;
     }
-
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
     sl->servAddr.sin_family = AF_INET;
 	memcpy((char *)&sl->serv->h_addr,
             (char *)&sl->servAddr.sin_addr.s_addr,
 			sl->serv->h_length);
 	sl->servAddr.sin_port = htons(sl->port);
-
 	if ((sl->xfer = connect(sl->sockFD,
                             (struct sockaddr *)&sl->servAddr,
                             sizeof(sl->servAddr))) < 0)
      {
-        cerr << "Failure connecting to server." << endl;
-		return -1;
+        cerr << "Socket error: connect()" << endl;
+		return 2;
      }
-
      return 1;
 }
 
@@ -285,37 +218,30 @@ int prepare_socket(ServerLink * sl, char * argv[])
  *Once complete, await ACK from server.
  *************************************/
 int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
-                         int y)
+                         int y, char ** buffer)
 {
     stringstream stream;
-    char * buffer = new char[1025];
+    bzero(*buffer, sizeof(*buffer));
     int k = 0;
-
     cout << "Sending my encrypted position." << endl;
-
     while (sock_handshake(sl))
     {
         FHEPubKey * pk = new FHEPubKey(*upk->context);
-        socket_to_stream(stream, &buffer, sl, 1024);
+        socket_to_stream(stream, buffer, sl, BUFFSIZE);
         stream >> *pk;
         stream.str("");
         stream.clear();
         Ctxt output(*pk);
         output = encrypt_location(x, y, *pk);
         stream << output;
-        stream_to_socket(stream, &buffer, sl, 1024);
+        stream_to_socket(stream, buffer, sl, BUFFSIZE);
         stream.str("");
         stream.clear();
         delete pk;
         k++;
     }
-
     cout << k << " positions transferred." << endl;
-
     recv_ack(sl);
-
-    delete [] buffer;
-
     return 1;
 }
 
@@ -326,24 +252,28 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
  *Sends ACK after all the file has been
  *obtained.
  ***********************/
-vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk)
+vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk,
+                                  char ** buffer)
 {
     vector<long> d;
     Ctxt encrypted_distances(*upk->publicKey);
     stringstream stream;
-    char * buffer = new char[1025];
-
-    socket_to_stream(stream, &buffer, sl, 1024);
-
+    bzero(*buffer, sizeof(*buffer));
+    socket_to_stream(stream, buffer, sl, BUFFSIZE);
     stream >> encrypted_distances;
     stream.str("");
     stream.clear();
 
+#ifdef MEMTEST
+    fstream fs;
+    fs.open("upkg.mem", fstream::out :: fstream::app);
+    fs << "Size of Encrypted Distances = ";
+    fs << sizeof(encrypted_distances) << "B" << endl;
+    fs.close();
+#endif // MEMTEST
+
     send_ack(sl);
-
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
-
-    delete [] buffer;
     return d;
 }
 
@@ -356,11 +286,8 @@ OPERATIONS.
 *****/
 int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
-    int p;
     bzero(*buffer, sizeof(*buffer));
-    sl->xfer = read(sl->sockFD, *buffer, blocksize);
-    p = sl->xfer;
-    return p;
+    return sl->xfer = read(sl->sockFD, *buffer, blocksize);
 }
 
 /*****
@@ -371,11 +298,9 @@ been lost.
 *****/
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl)
 {
-    int p;
     sl->xfer = write(sl->sockFD, *buffer, blocksize);
-    p = sl->xfer;
     bzero(*buffer, sizeof(*buffer));
-    return p;
+    return sl->xfer;
 }
 
 /*******************************
@@ -419,9 +344,9 @@ bool recv_ack(ServerLink * sl)
     {
         if (strcmp(ack, buffer) == 0)
         {
-            return true;
             delete [] buffer;
             delete [] ack;
+            return true;
         }
     }
     delete [] buffer;
@@ -453,7 +378,7 @@ void stream_to_socket(istream &stream, char ** buffer,
     bzero(*buffer, sizeof(*buffer));
     int k;
 
-#ifdef DEBUG
+#ifdef TRANSFER
     int tx, totalloops;
     totalloops = 0;
     tx = 0;
@@ -466,17 +391,17 @@ void stream_to_socket(istream &stream, char ** buffer,
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
 
-#ifdef DEBUG
+#ifdef TRANSFER
         tx += k;
         totalloops++;
-#endif // DEBUG
+#endif // TRANSFER
 
     }
     while (k == blocksize);
 
-#ifdef DEBUG
+#ifdef TRANSFER
         cout << totalloops << " : " << tx << endl;
-#endif // DEBUG
+#endif // TRANSFER
 }
 
 /******************************
@@ -490,7 +415,7 @@ void socket_to_stream(ostream &stream, char ** buffer,
     bzero(*buffer, sizeof(*buffer));
     int k;
 
-#ifdef DEBUG
+#ifdef TRANSFER
     int rx, totalloops;
     totalloops = 0;
     rx = 0;
@@ -502,18 +427,17 @@ void socket_to_stream(ostream &stream, char ** buffer,
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
 
-#ifdef DEBUG
+#ifdef TRANSFER
         rx += k;
         totalloops++;
-#endif // DEBUG
+#endif // TRANSFER
 
     }
     while (k == blocksize);
-
     stream.clear();
 
-#ifdef DEBUG
+#ifdef TRANSFER
         cout << totalloops << " : " << rx;
         cout << " : " << stream.tellp() << endl;
-#endif // DEBUG
+#endif // TRANSFER
 }
