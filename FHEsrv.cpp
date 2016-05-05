@@ -2,8 +2,8 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    1024
-#define TIMING
-#define MEMTEST
+//#define TIMING
+//#define MEMTEST
 //#define TRANSFER
 //#define THREADSYNC
 /**********************************************
@@ -16,14 +16,14 @@ int main(int argc, char * argv[])
     ServerData sd;
     ServerLink sl;
     sd.mutex = PTHREAD_MUTEX_INITIALIZER;
-    if (argc != 3)
+    if (argc != 6)
     {
-        cerr << "./FHEops_x portnum maxclients" << endl;
+        cerr << "./FHEops_x portnum maxclients p r L" << endl;
         exit(0);
     }
     sd.maxthreads = atoi(argv[2]);
     pthread_t freads[sd.maxthreads];
-    generate_scheme(&sd);
+    generate_scheme(&sd, argv);
     cout << "FHE Scheme generated." << endl;
     if (prepare_server_socket(&sl, argv) != 1)
     {
@@ -429,10 +429,10 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
  *parameters. Writes the scheme to the ServerData
  *structure.
  *******************************/
-int generate_scheme(ServerData * sd) {
-    long long int p = 2;
-    long r = 8;
-    long L = 5;
+int generate_scheme(ServerData * sd, char * argv[]) {
+    long long int p = atoi(argv[3]);
+    long r = atoi(argv[4]);
+    long L = atoi(argv[5]);
     long security = 128;
     long m = 0;
     long c = 3;

@@ -84,13 +84,12 @@ struct ClientLink {
 /**LOGISTICS**/
 void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer);
 void *handle_client(void *param);
-void *handle_population(void *param);
 void get_client_position(ServerData * sd, ClientLink * sl, int id,
                          char ** buffer);
 void calculate_distances(ServerData * sd, ClientLink * sl, int id,
                          char ** buffer);
 /**FHE**/
-int generate_scheme(ServerData * sd);
+int generate_scheme(ServerData * sd, char * argv[]);
 Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
                      const FHEPubKey &pk);
 Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk);
