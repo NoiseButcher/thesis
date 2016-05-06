@@ -25,10 +25,7 @@ int main(int argc, char * argv[])
     pthread_t freads[sd.maxthreads];
     generate_scheme(&sd, argv);
     cout << "FHE Scheme generated." << endl;
-    if (prepare_server_socket(&sl, argv) != 1)
-    {
-        exit(2);
-    }
+    prepare_server_socket(&sl, argv);
     cout << "Connection open for clients." << endl;
     sd.users = 0;
     while (true)
@@ -80,7 +77,7 @@ int main(int argc, char * argv[])
     }
     pthread_barrier_destroy(&sd.popcap);
     pthread_mutex_destroy(&sd.mutex);
-    return 0;
+    return 1;
 }
 
 /**LOGISTICS FUNCTIONS**/
@@ -330,7 +327,7 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         stream_to_socket(stream, buffer, sl, BUFFSIZE);
         stream.str("");
         stream.clear();
-
+        recv_ack(sl);
         socket_to_stream(stream, buffer, sl, BUFFSIZE);
         try
         {
@@ -342,18 +339,13 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
             delete [] buffer;
             exit(3);
         }
+        //send_ack(sl);
         stream.str("");
         stream.clear();
         sd->cluster[id].thisLoc.push_back(newusr);
     }
     send_nak(sl);
-    if (!send_ack(sl))
-    {
-        cerr << "No ACK sent to client " << sl->thisClient;
-        cerr << "." << endl;
-        delete [] buffer;
-        exit(0);
-    }
+    send_ack(sl);
 }
 
 /**********************
@@ -414,6 +406,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
+
     if (!recv_ack(sl))
     {
         cerr << "No ACK received from client " << sl->thisClient;
@@ -429,7 +422,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
  *parameters. Writes the scheme to the ServerData
  *structure.
  *******************************/
-int generate_scheme(ServerData * sd, char * argv[]) {
+void generate_scheme(ServerData * sd, char * argv[]) {
     long long int p = atoi(argv[3]);
     long r = atoi(argv[4]);
     long L = atoi(argv[5]);
@@ -475,8 +468,6 @@ int generate_scheme(ServerData * sd, char * argv[]) {
     fs << "ms" << endl;
     fs.close();
 #endif
-
-    return 1;
 }
 
 /****************************
@@ -622,13 +613,13 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
  *Listen on a port provided in the
  *arguments.
  *****************************/
-int prepare_server_socket(ServerLink * sl, char * argv[])
+void prepare_server_socket(ServerLink * sl, char * argv[])
 {
     sl->port = atoi(argv[1]);
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
         cerr << "Socket Error: socket()" << endl;
-		return 2;
+		exit(2);
     }
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
     sl->servAddr.sin_family = AF_INET;
@@ -639,10 +630,9 @@ int prepare_server_socket(ServerLink * sl, char * argv[])
             sizeof(sl->servAddr)) < 0)
     {
         cerr << "Socket Error: bind()" << endl;
-		return 2;
+		exit(2);
 	}
 	listen(sl->sockFD, sl->blocklen);
-	return 1;
 }
 
 /*****

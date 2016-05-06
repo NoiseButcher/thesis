@@ -397,7 +397,11 @@ void stream_to_socket(istream &stream, char ** buffer,
 
     }
     while (k == blocksize);
-
+    if (!recv_ack(sl))
+    {
+        cerr << "ACK error: Server to Client" << endl;
+        exit(4);
+    }
 #ifdef TRANSFER
         cout << totalloops << " : " << tx << endl;
 #endif // TRANSFER
@@ -434,7 +438,7 @@ void socket_to_stream(ostream &stream, char ** buffer,
     }
     while (k == blocksize);
     stream.clear();
-
+    send_ack(sl);
 #ifdef TRANSFER
         cout << totalloops << " : " << rx;
         cout << " : " << stream.tellp() << endl;

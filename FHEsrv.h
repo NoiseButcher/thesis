@@ -89,12 +89,12 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
 void calculate_distances(ServerData * sd, ClientLink * sl, int id,
                          char ** buffer);
 /**FHE**/
-int generate_scheme(ServerData * sd, char * argv[]);
+void generate_scheme(ServerData * sd, char * argv[]);
 Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
                      const FHEPubKey &pk);
 Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk);
 /**NETWORKING**/
-int prepare_server_socket(ServerLink * sl, char * argv[]);
+void prepare_server_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize,
                        ClientLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ClientLink * sl);

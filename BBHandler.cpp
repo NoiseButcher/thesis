@@ -206,29 +206,47 @@ void send_location_handler(int infd, int outfd, char ** buffer,
     cerr << "Getting location data" << endl;
     while (recv_ack_socket(sl))
     {
-        cerr << ".";
-        send_ack_pipe(infd); //Send ACK to pipe
-        send_ack_socket(sl); //Reply with ACK to server
-        cerr << ".";
+        send_ack_pipe(infd);
+        if (!recv_ack_pipe(outfd))
+        {
+            cerr << "ACK error: handshake" << endl;
+            exit(4);
+        }
+        send_ack_socket(sl);
         socket_to_pipe(infd, outfd, buffer, sl, blocksize); //PK
-        cerr << ".";
+        if (!recv_ack_pipe(outfd))
+        {
+            cerr << "ACK error: FHBB to socket" << endl;
+            exit(4);
+        }
+        send_ack_socket(sl);
         pipe_to_socket(infd, outfd, buffer, sl, blocksize); //EncLoc
-        cerr << ".";
+        //if (!recv_ack_socket(sl))
+        //{
+            //cerr << "ACK error: Socket to FHBB (receive distances)";
+            //cerr << endl;
+            //exit(4);
+        //}
+        //send_ack_pipe(infd);
         i++;
     }
     cerr << endl;
     send_nak_pipe(infd);
+
     if (i == 0)
     {
         cerr << "Server crash, HElib error probably" << endl;
         delete [] buffer;
         exit(3);
     }
+
     cerr << "Locations sent to server." << endl;
-    if (recv_ack_socket(sl))
+    if (!recv_ack_socket(sl))
     {
-        send_ack_pipe(infd);
+        cerr << "ACK error: get_client_position()" << endl;
+        exit(1);
     }
+    send_ack_pipe(infd);
 }
 
 /************************************
@@ -402,7 +420,7 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "No ACK for socket data received." << endl;
+            cerr << "ACK error: Server block read incomplete" << endl;
             close(infd);
             close(outfd);
             delete [] *buffer;
@@ -432,7 +450,7 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "No ACK for handler data received." << endl;
+            cerr << "ACK error: Handler block read incomplete" << endl;
             close(infd);
             close(outfd);
             delete [] *buffer;

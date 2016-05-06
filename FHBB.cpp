@@ -16,14 +16,14 @@ int main(int argc, char * argv[])
     vector<long> them;
     char * buffer = new char[BUFFSIZE+2];
     bzero(buffer, sizeof(buffer));
-    cout.flush();
-    cin.sync();
+
     if (argc != 1)
     {
         cerr << "./FHBB_x" << endl;
         delete [] buffer;
         return 0;
     }
+
     install_upkg_android(&me, &buffer);
     pair <int, int> loc = get_gps(&buffer);
     send_location_android(&me, loc.first, loc.second, &buffer);
@@ -60,15 +60,8 @@ pair<int, int> get_gps(char ** buffer)
 	pipe_out(input, buffer, BUFFSIZE);
 	input.str("");
 	input.clear();
-
-#ifndef INTEGCHK
     pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
-#else
-    pipe_in_dbg(input, buffer, BUFFSIZE);
-    sleep(0.1);
-#endif // INTEGCHK
-
 	input >> lat;
     input.str("");
 	input.clear();
@@ -76,15 +69,8 @@ pair<int, int> get_gps(char ** buffer)
 	pipe_out(input, buffer, BUFFSIZE);
 	input.str("");
 	input.clear();
-
-#ifndef INTEGCHK
     pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
-#else
-    pipe_in_dbg(input, buffer, BUFFSIZE);
-    sleep(0.1);
-#endif // INTEGCHK
-
 	input >> lng;
     input.str("");
 	input.clear();
@@ -126,6 +112,7 @@ void display_positions(vector<long> d)
         i++;
     }
     while (d[i] > 0);
+    cout.flush();
     recv_ack_android();
 }
 
@@ -140,13 +127,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     stream.str("");
     stream.clear();
     bzero(*buffer, sizeof(*buffer));
-
-#ifndef INTEGCHK
     pipe_in(stream, buffer, BUFFSIZE);
-#else
-    pipe_in_dbg(stream, &buffer, BUFFSIZE);
-#endif // INTEGCHK
-
     try
     {
         readContextBase(stream, upk->m, upk->p,
@@ -164,13 +145,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     stream.str("");
     stream.clear();
     send_ack_android();
-
-#ifndef INTEGCHK
     pipe_in(stream, buffer, BUFFSIZE);
-#else
-    pipe_in_dbg(stream, &buffer, BUFFSIZE);
-#endif // INTEGCHK
-
     try
     {
         stream >> *upk->context;
@@ -201,13 +176,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
         delete [] buffer;
         exit(3);
     }
-
-#ifndef INTEGCHK
     pipe_out(stream, buffer, BUFFSIZE);
-#else
-    pipe_out_dbg(stream, buffer, BUFFSIZE);
-#endif // INTEGCHK
-
     stream.str("");
     stream.clear();
     if (!recv_ack_android())
@@ -222,7 +191,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
  *Sends my location, encrypted with all of the public keys,
  *to the FHBB cout file descriptor.
  *****************/
-int send_location_android(UserPackage * upk, int x, int y,
+void send_location_android(UserPackage * upk, int x, int y,
                           char ** buffer)
 {
     stringstream stream;
@@ -230,16 +199,14 @@ int send_location_android(UserPackage * upk, int x, int y,
     stream.clear();
     int i = 0;
     bzero(*buffer, sizeof(*buffer));
-    while (recv_ack_android() == true)
+
+    while (recv_ack_android())
     {
+        send_ack_android();
+
         FHEPubKey * pk = new FHEPubKey(*upk->context);
-
-#ifndef INTEGCHK
         pipe_in(stream, buffer, BUFFSIZE);
-#else
-        pipe_in_dbg(stream, buffer, BUFFSIZE);
-#endif // INTEGCHK
-
+        //sleep(0.1);
         try
         {
             stream >> *pk;
@@ -251,6 +218,7 @@ int send_location_android(UserPackage * upk, int x, int y,
             delete [] buffer;
             exit(3);
         }
+        send_ack_android();
         stream.str("");
         stream.clear();
         Ctxt output(*pk);
@@ -266,31 +234,32 @@ int send_location_android(UserPackage * upk, int x, int y,
             delete [] buffer;
             exit(3);
         }
-
-#ifndef INTEGCHK
         pipe_out(stream, buffer, BUFFSIZE);
-#else
-        pipe_out_dbg(stream, buffer, BUFFSIZE);
-#endif // INTEGCHK
-
+        //sleep(0.1);
         stream.str("");
         stream.clear();
+        //if (!recv_ack_android())
+        //{
+            //cerr << "ACK error: Receive distances" << endl;
+            //exit(4);
+        //}
         delete pk;
         i++;
     }
+    /*Catch if the first client has crashed, exit*/
     if (i == 0)
     {
         cerr << "Server crash, probably HElib error" << endl;
         delete [] buffer;
         exit(3);
     }
+    /*Receive an ACK from the server confirming all data received*/
     if (!recv_ack_android())
     {
-        cerr << "ABORT ABORT" << endl;
+        cerr << "Server Abort" << endl;
         delete [] buffer;
-        exit(0);
+        exit(1);
     }
-    return 1;
 }
 
 /***********************
@@ -304,13 +273,7 @@ vector<long> get_distances_android(UserPackage * upk, char ** buffer)
     stream.clear();
     bzero(*buffer, sizeof(*buffer));
     Ctxt encrypted_distances(*upk->publicKey);
-
-#ifndef INTEGCHK
     pipe_in(stream, buffer, BUFFSIZE);
-#else
-    pipe_in_dbg(stream, buffer, BUFFSIZE);
-#endif // INTEGCHK
-
     try
     {
         stream >> encrypted_distances;
@@ -321,9 +284,9 @@ vector<long> get_distances_android(UserPackage * upk, char ** buffer)
         delete [] buffer;
         exit(3);
     }
+    send_ack_android();
     stream.str("");
     stream.clear();
-    send_ack_android();
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
     return d;
 }
@@ -345,6 +308,7 @@ bool recv_ack_android()
     chk[3]='\0';
     cin.get(ack, 4);
     if (cin.fail()) cin.clear();
+    cin.sync();
     if (strcmp(ack, chk) == 0) {
         delete [] chk;
         delete [] ack;
@@ -361,6 +325,7 @@ bool recv_ack_android()
  ****************/
 void send_ack_android()
 {
+    cin.sync();
     cout << "ACK";
     cout.flush();
 }
@@ -390,7 +355,6 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
 {
     bzero(*buffer, sizeof(*buffer));
     int x;
-    cin.sync();
     do
     {
         x = 0;
@@ -423,12 +387,21 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             y = 0;
             pk = 0;
             purge_nulls();
+            /*Get [BUFFSIZE - streamsize(x) + 1] bytes
+              from cin*/
             cin.getline(*buffer, blocklim - x);
             if (cin.fail()) cin.clear();
+            /*Transfer all extracted bytes excluding the
+              newline into stream*/
             y = cin.gcount() - 1;
             stream.write(*buffer, y);
             x += y;
             pk = cin.peek();
+            /*Conditional action to handle the final
+              character of the read being a newline
+              (which would be stripped) which would mean
+              the next two characters would be '\n'
+              and '\0'.*/
             if ((pk == 10) && (x == (blocksize-1)))
             {
                 cin.ignore(2);
@@ -436,6 +409,9 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
                 x++;
                 pk = cin.peek();
             }
+            /*Conditional Loop to compensate for getline()
+              stripping the newline from a non-maximum
+              buffer*/
             if ((x < blocksize) && (pk > 31))
             {
                 stream << endl;
@@ -448,82 +424,4 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
     }
     while (x == blocksize);
     stream.clear();
-}
-
-/**DEBUG PIPE THING**/
-void pipe_in_dbg(ostream &stream, char ** buffer, int blocksize)
-{
-    bzero(*buffer, sizeof(*buffer));
-    int x, y, pk, charlim;
-    charlim = blocksize - 1;
-    fstream wtf;
-    wtf.open("integ.txt", fstream::out | fstream::app);
-    wtf << "<<<INPUT>>>" << endl;
-    do
-    {
-        x = 0;
-        do
-        {
-            pk = 0;
-            y = 0;
-            purge_nulls();
-            cin.getline(*buffer, blocksize - x);
-            if (cin.fail()) cin.clear();
-            y = cin.gcount() - 1;
-            stream.write(*buffer, y);
-            if (y < charlim) wtf.write(*buffer, y);
-            x += y;
-            pk = cin.peek();
-            if ((pk == 10) && (x == (charlim-1)))
-            {
-                cin.ignore(2);
-                stream << endl;
-                wtf << endl;
-                x++;
-                pk = cin.peek();
-            }
-            if ((x < charlim) && (pk > 31))
-            {
-                stream << endl;
-                wtf << endl;
-                x++;
-            }
-            bzero(*buffer, sizeof(*buffer));
-        }
-        while ((x < charlim) && (pk > 31) && (pk < 127));
-        send_ack_android();
-    }
-    while (x == charlim);
-    stream.clear();
-    wtf << endl;
-    wtf << x << " Bytes DL on exit, pk val: " << pk << endl;
-    wtf.close();
-}
-
-/**PIPE OUTPUT DEBUG**/
-void pipe_out_dbg(istream &stream, char** buffer, int blocksize)
-{
-    bzero(*buffer, sizeof(*buffer));
-    int x;
-    cin.sync();
-    fstream wtf;
-    wtf.open("integ.txt", fstream::out | fstream::app);
-    wtf << "<<<OUTPUT>>>" << endl;
-    do
-    {
-        x = 0;
-        stream.read(*buffer, blocksize);
-        x = stream.gcount();
-        cout.write(*buffer, x);
-        cout.flush();
-        if (x < blocksize)
-        {
-            wtf.write(*buffer, x);
-            wtf << endl;
-            wtf << x << "B << OUT" << endl;
-        }
-        bzero(*buffer, sizeof(*buffer));
-    }
-    while (x == blocksize);
-    wtf.close();
 }
