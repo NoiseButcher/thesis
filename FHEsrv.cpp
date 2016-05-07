@@ -1,7 +1,7 @@
 #include "FHEsrv.h"
 #include <sys/resource.h>
 
-#define BUFFSIZE    1024
+#define BUFFSIZE    4096
 //#define TIMING
 //#define MEMTEST
 //#define TRANSFER
@@ -94,13 +94,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
-    if (!recv_ack(sl))
-    {
-        cerr << "No ACK received from client " << sl->thisClient;
-        cerr << "." << endl;
-        delete [] buffer;
-        exit(0);
-    }
+
     cout << "Base File streaming complete." << endl;
     try
     {
@@ -115,13 +109,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
-    if (!recv_ack(sl))
-    {
-        cerr << "No ACK received from client " << sl->thisClient;
-        cerr << "." << endl;
-        delete [] buffer;
-        exit(0);
-    }
+
     cout << "Context Stream Complete." << endl;
     socket_to_stream(stream, buffer, sl, BUFFSIZE);
     Cluster cx(*sd->context);
@@ -148,13 +136,6 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
 
     stream.str("");
     stream.clear();
-    if (!send_ack(sl))
-    {
-        cerr << "No ACK sent to client " << sl->thisClient;
-        cerr << "." << endl;
-        delete [] buffer;
-        exit(0);
-    }
     cout << "Client install complete." << endl;
 }
 
@@ -324,10 +305,13 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
             delete [] buffer;
             exit(3);
         }
+        stream.seekg(0, ios::end);
+        cout << "Public Key at server: " << stream.tellg() << endl;
+        stream.seekg(0, ios::beg);
         stream_to_socket(stream, buffer, sl, BUFFSIZE);
         stream.str("");
         stream.clear();
-        recv_ack(sl);
+
         socket_to_stream(stream, buffer, sl, BUFFSIZE);
         try
         {
@@ -339,7 +323,7 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
             delete [] buffer;
             exit(3);
         }
-        //send_ack(sl);
+
         stream.str("");
         stream.clear();
         sd->cluster[id].thisLoc.push_back(newusr);
@@ -406,14 +390,6 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
     stream.clear();
-
-    if (!recv_ack(sl))
-    {
-        cerr << "No ACK received from client " << sl->thisClient;
-        cerr << "." << endl;
-        delete [] buffer;
-        exit(0);
-    }
 }
 
 /**FHE FUNCTIONS**/
@@ -770,6 +746,11 @@ void stream_to_socket(istream &stream, char ** buffer,
         totalloops++;
 #endif // TRANSFER
 
+        if (!recv_ack(sl))
+        {
+            cerr << "ACK error: socket data block" << endl;
+            exit(4);
+        }
     }
     while (k == blocksize);
 
@@ -806,6 +787,7 @@ void socket_to_stream(ostream &stream, char ** buffer,
         totalloops++;
 #endif // TRANSFER
 
+        send_ack(sl);
     }
     while (k == blocksize);
     stream.clear();

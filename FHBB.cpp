@@ -1,7 +1,7 @@
 #include "FHBB.h"
 #include <sys/resource.h>
 
-#define BUFFSIZE    1024
+#define BUFFSIZE    4096
 //#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
@@ -144,7 +144,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
                                   upk->gens, upk->ords);
     stream.str("");
     stream.clear();
-    send_ack_android();
+
     pipe_in(stream, buffer, BUFFSIZE);
     try
     {
@@ -165,7 +165,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     addSome1DMatrices(*upk->secretKey);
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
-    send_ack_android();
+
     try
     {
         stream << *upk->publicKey;
@@ -179,12 +179,6 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     pipe_out(stream, buffer, BUFFSIZE);
     stream.str("");
     stream.clear();
-    if (!recv_ack_android())
-    {
-        cerr << "ABORT ABORT" << endl;
-        delete [] buffer;
-        exit(0);
-    }
 }
 
 /*****************
@@ -206,7 +200,9 @@ void send_location_android(UserPackage * upk, int x, int y,
 
         FHEPubKey * pk = new FHEPubKey(*upk->context);
         pipe_in(stream, buffer, BUFFSIZE);
-        //sleep(0.1);
+        stream.seekg(0, ios::end);
+        cerr << "Public Key at client: " << stream.tellg() << endl;
+        stream.seekg(0, ios::beg);
         try
         {
             stream >> *pk;
@@ -218,7 +214,7 @@ void send_location_android(UserPackage * upk, int x, int y,
             delete [] buffer;
             exit(3);
         }
-        send_ack_android();
+
         stream.str("");
         stream.clear();
         Ctxt output(*pk);
@@ -235,14 +231,9 @@ void send_location_android(UserPackage * upk, int x, int y,
             exit(3);
         }
         pipe_out(stream, buffer, BUFFSIZE);
-        //sleep(0.1);
+
         stream.str("");
         stream.clear();
-        //if (!recv_ack_android())
-        //{
-            //cerr << "ACK error: Receive distances" << endl;
-            //exit(4);
-        //}
         delete pk;
         i++;
     }
@@ -284,7 +275,6 @@ vector<long> get_distances_android(UserPackage * upk, char ** buffer)
         delete [] buffer;
         exit(3);
     }
-    send_ack_android();
     stream.str("");
     stream.clear();
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
@@ -339,10 +329,12 @@ void purge_nulls()
 {
     int pk;
     pk = cin.peek();
+    if (cin.fail()) cin.clear();
     while (pk < 32)
     {
         cin.ignore(1);
         pk = cin.peek();
+        if (cin.fail()) cin.clear();
     }
 }
 
@@ -362,6 +354,11 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
         x = stream.gcount();
         cout.write(*buffer, x);
         cout.flush();
+        if (!recv_ack_android())
+        {
+            cerr << "ACK error: pipe out()" << endl;
+            exit(4);
+        }
         bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
@@ -397,6 +394,7 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
             stream.write(*buffer, y);
             x += y;
             pk = cin.peek();
+            if (cin.fail()) cin.clear();
             /*Conditional action to handle the final
               character of the read being a newline
               (which would be stripped) which would mean
@@ -408,6 +406,7 @@ void pipe_in(ostream &stream, char ** buffer, int blocksize)
                 stream << endl;
                 x++;
                 pk = cin.peek();
+                if (cin.fail()) cin.clear();
             }
             /*Conditional Loop to compensate for getline()
               stripping the newline from a non-maximum

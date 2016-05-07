@@ -1,7 +1,7 @@
 #include "BBHandler.h"
 #include <sys/resource.h>
 
-#define BUFFSIZE    1024
+#define BUFFSIZE    4096
 //#define INTEGCHK
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
@@ -159,7 +159,6 @@ void display_positions_handler(int infd, int outfd, char ** buffer,
     stream.clear();
     pipe_to_handler(stream, infd, outfd, buffer, blocksize);
     cout << stream.str();
-    send_ack_pipe(infd);
     stream.str("");
     stream.clear();
 }
@@ -174,24 +173,11 @@ void display_positions_handler(int infd, int outfd, char ** buffer,
 void install_upkg_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
-    cerr << "Installing FHE Scheme.";
+    cerr << "Installing FHE Scheme." << endl;
     socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Base
-    cerr << ".";
-    recv_ack_pipe(outfd);
-    cerr << ".";
-    send_ack_socket(sl);
-    cerr << ".";
     socket_to_pipe(infd, outfd, buffer, sl, blocksize); //Context
-    cerr << ".";
-    recv_ack_pipe(outfd);
-    cerr << ".";
-    send_ack_socket(sl);
-    cerr << ".";
     pipe_to_socket(infd, outfd, buffer, sl, blocksize); //Public Key
-    cerr << "." << endl;
-    recv_ack_socket(sl);
     cerr << "Installation Complete." << endl;
-    send_ack_pipe(infd);
 }
 
 /*********************************
@@ -213,24 +199,13 @@ void send_location_handler(int infd, int outfd, char ** buffer,
             exit(4);
         }
         send_ack_socket(sl);
+
         socket_to_pipe(infd, outfd, buffer, sl, blocksize); //PK
-        if (!recv_ack_pipe(outfd))
-        {
-            cerr << "ACK error: FHBB to socket" << endl;
-            exit(4);
-        }
-        send_ack_socket(sl);
         pipe_to_socket(infd, outfd, buffer, sl, blocksize); //EncLoc
-        //if (!recv_ack_socket(sl))
-        //{
-            //cerr << "ACK error: Socket to FHBB (receive distances)";
-            //cerr << endl;
-            //exit(4);
-        //}
-        //send_ack_pipe(infd);
+
         i++;
     }
-    cerr << endl;
+
     send_nak_pipe(infd);
 
     if (i == 0)
@@ -240,7 +215,8 @@ void send_location_handler(int infd, int outfd, char ** buffer,
         exit(3);
     }
 
-    cerr << "Locations sent to server." << endl;
+    cerr << i << " locations sent to server." << endl;
+
     if (!recv_ack_socket(sl))
     {
         cerr << "ACK error: get_client_position()" << endl;
@@ -256,12 +232,8 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 void get_distance_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
-    cerr << "Downloading distances.";
+    cerr << "Downloading distances." << endl;
     socket_to_pipe(infd, outfd, buffer, sl, blocksize);
-    cerr << ".";
-    recv_ack_pipe(outfd);
-    cerr << "." << endl;
-    send_ack_socket(sl);
     cerr << "Done." << endl;
 }
 
@@ -342,6 +314,11 @@ void handler_to_socket(istream &stream, char ** buffer,
         stream.read(*buffer, blocksize);
         k = stream.gcount();
         write_to_socket(buffer, k, sl);
+        if (!recv_ack_socket(sl))
+        {
+            cerr << "ACK error: handler to socket()" << endl;
+            exit(4);
+        }
     }
     while (k == blocksize);
 }
@@ -360,6 +337,7 @@ void socket_to_handler(ostream &stream, char ** buffer,
         k = 0;
         k = stream_from_socket(buffer, blocksize, sl);
         stream.write(*buffer, k);
+        send_ack_socket(sl);
         bzero(*buffer, sizeof(*buffer));
     }
     while (k == blocksize);
@@ -380,6 +358,7 @@ void pipe_to_handler(ostream &stream, int infd, int outfd,
         x = 0;
         x = read(outfd, *buffer, blocksize);
         stream.write(*buffer, x);
+        send_ack_pipe(infd);
         bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
@@ -401,6 +380,14 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
         x = 0;
         x = read(outfd, *buffer, blocksize);
         write_to_socket(buffer, x, sl);
+        if (!recv_ack_socket(sl))
+        {
+            cerr << "ACK error, pipe_to_socket()" << endl;
+            close(infd);
+            close(outfd);
+            exit(4);
+        }
+        send_ack_pipe(infd);
     }
     while (x == blocksize);
 }
@@ -420,12 +407,13 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "ACK error: Server block read incomplete" << endl;
+            cerr << "ACK error: socket_to_pipe()" << endl;
             close(infd);
             close(outfd);
             delete [] *buffer;
             exit(0);
         }
+        send_ack_socket(sl);
         bzero(*buffer, sizeof(*buffer));
     }
     while (x == blocksize);
@@ -450,7 +438,7 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "ACK error: Handler block read incomplete" << endl;
+            cerr << "ACK error: handler_to_pipe()" << endl;
             close(infd);
             close(outfd);
             delete [] *buffer;
