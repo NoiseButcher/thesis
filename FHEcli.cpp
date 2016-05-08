@@ -1,7 +1,7 @@
 #include "FHEcli.h"
 #include <sys/resource.h>
 
-#define BUFFSIZE    1024
+#define BUFFSIZE    4096
 //#define MEMTEST
 //#define TRANSFER
 /***********************************
@@ -43,7 +43,9 @@ int main(int argc, char * argv[])
 #ifdef MEMTEST
     fstream fs;
     fs.open("upkg.mem", fstream::out | fstream::app);
-    fs << "Size of FHE scheme = " << sizeof(me) << "B" << endl;
+    long int pkgsz = sizeof(*me.publicKey) + sizeof(*me.secretKey);
+    pkgsz += sizeof(*me.context) + sizeof(*me.ea);
+    fs << "Size of FHE scheme = " << pkgsz << "B" << endl;
     fs.close();
 #endif // MEMTEST
 
@@ -149,7 +151,6 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk,
     ss.clear();
     upk->context = new FHEcontext(upk->m, upk->p, upk->r,
                                   upk->gens, upk->ords);
-    send_ack(sl);
     cout << "Streaming context data from server..." << endl;
     socket_to_stream(ss, buffer, sl, BUFFSIZE);
     ss >> *upk->context;
@@ -162,13 +163,11 @@ void install_upkg_socket(ServerLink * sl, UserPackage * upk,
     addSome1DMatrices(*upk->secretKey);
     upk->ea = new EncryptedArray(*upk->context, upk->G);
     upk->nslots = upk->ea->size();
-    send_ack(sl);
     cout << "Streaming my public key to the server." << endl;
     ss << *upk->publicKey;
     stream_to_socket(ss, buffer, sl, BUFFSIZE);
     ss.str("");
     ss.clear();
-    recv_ack(sl);
     cout << "Preliminary install complete." << endl;
 }
 
@@ -216,7 +215,7 @@ int prepare_socket(ServerLink * sl, char * argv[])
  *-Return Enc(n)[x, y] to server
  *Once complete, await ACK from server.
  *************************************/
-int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
+void send_location_socket(UserPackage * upk, ServerLink * sl, int x,
                          int y, char ** buffer)
 {
     stringstream stream;
@@ -241,7 +240,6 @@ int send_location_socket(UserPackage * upk, ServerLink * sl, int x,
     }
     cout << k << " positions transferred." << endl;
     recv_ack(sl);
-    return 1;
 }
 
 /***********************
@@ -271,7 +269,6 @@ vector<long> get_distances_socket(ServerLink * sl, UserPackage * upk,
     fs.close();
 #endif // MEMTEST
 
-    send_ack(sl);
     upk->ea->decrypt(encrypted_distances, *upk->secretKey, d);
     return d;
 }
@@ -395,13 +392,15 @@ void stream_to_socket(istream &stream, char ** buffer,
         totalloops++;
 #endif // TRANSFER
 
+        if (!recv_ack(sl))
+        {
+            cerr << "ACK error: Server to Client" << endl;
+            exit(4);
+        }
+
     }
     while (k == blocksize);
-    if (!recv_ack(sl))
-    {
-        cerr << "ACK error: Server to Client" << endl;
-        exit(4);
-    }
+
 #ifdef TRANSFER
         cout << totalloops << " : " << tx << endl;
 #endif // TRANSFER
@@ -435,10 +434,11 @@ void socket_to_stream(ostream &stream, char ** buffer,
         totalloops++;
 #endif // TRANSFER
 
+        send_ack(sl);
     }
     while (k == blocksize);
     stream.clear();
-    send_ack(sl);
+
 #ifdef TRANSFER
         cout << totalloops << " : " << rx;
         cout << " : " << stream.tellp() << endl;

@@ -125,15 +125,6 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     }
     sd->cluster.push_back(cx);
 
-#ifdef MEMTEST
-    fstream fs;
-    fs.open("cluster.mem", fstream::out | fstream::app);
-    fs << "Server Memory Information" << endl;
-    fs << "Number of Clients = " << sd->users << endl;
-    fs << "Size of Cluster = " << (sizeof(sd->cluster[0]) * sd->cluster.size()) << "B" << endl;
-    fs.close();
-#endif // MEMTEST
-
     stream.str("");
     stream.clear();
     cout << "Client install complete." << endl;
@@ -291,6 +282,13 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         sd->cluster[id].thisLoc.erase(sd->cluster[id].thisLoc.begin(),
                                         sd->cluster[id].thisLoc.end());
     }
+#ifdef MEMTEST
+    fstream fs;
+    long int klusta;
+    klusta = 0;
+    fs.open("cluster.mem", fstream::out | fstream::app);
+    fs << "Number of Clients = " << sd->users << endl;
+#endif // MEMTEST
     for (k = 0; k < sd->users; k++)
     {
         sock_handshake(sl);
@@ -305,9 +303,12 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
             delete [] buffer;
             exit(3);
         }
+#ifdef MEMTEST
         stream.seekg(0, ios::end);
+        klusta += stream.tellg();
         cout << "Public Key at server: " << stream.tellg() << endl;
         stream.seekg(0, ios::beg);
+#endif
         stream_to_socket(stream, buffer, sl, BUFFSIZE);
         stream.str("");
         stream.clear();
@@ -324,10 +325,23 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
             exit(3);
         }
 
+#ifdef MEMTEST
+        stream.seekg(0, ios::end);
+        klusta += stream.tellg();
+        cout << "Location at server: " << stream.tellg() << endl;
+        stream.seekg(0, ios::beg);
+#endif
+
         stream.str("");
         stream.clear();
         sd->cluster[id].thisLoc.push_back(newusr);
     }
+
+#ifdef MEMTEST
+    fs << "Size of Cluster = " << klusta << "B" << endl;
+    fs.close();
+#endif
+
     send_nak(sl);
     send_ack(sl);
 }
