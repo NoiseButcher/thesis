@@ -2,7 +2,7 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    4096
-//#define MEMTEST
+#define MEMTEST
 //#define TRANSFER
 /***********************************
 Client side program to be handled as
@@ -42,10 +42,39 @@ int main(int argc, char * argv[])
 
 #ifdef MEMTEST
     fstream fs;
+    stringstream streamu;
+    long int pkgu;
+    pkgu = 0;
     fs.open("upkg.mem", fstream::out | fstream::app);
-    long int pkgsz = sizeof(*me.publicKey) + sizeof(*me.secretKey);
-    pkgsz += sizeof(*me.context) + sizeof(*me.ea);
-    fs << "Size of FHE scheme = " << pkgsz << "B" << endl;
+    streamu << *me.context;
+    streamu.clear();
+    streamu.seekg(0, ios::end);
+    pkgu += streamu.tellg();
+    streamu.seekg(0, ios::beg);
+    streamu.str("");
+    streamu.clear();
+    streamu << *me.publicKey;
+    streamu.clear();
+    streamu.seekg(0, ios::end);
+    pkgu += streamu.tellg();
+    streamu.seekg(0, ios::beg);
+    streamu.str("");
+    streamu.clear();
+    streamu << *me.secretKey;
+    streamu.clear();
+    streamu.seekg(0, ios::end);
+    pkgu += streamu.tellg();
+    streamu.seekg(0, ios::beg);
+    streamu.str("");
+    streamu.clear();
+    streamu << *me.ea;
+    streamu.clear();
+    streamu.seekg(0, ios::end);
+    pkgu += streamu.tellg();
+    streamu.seekg(0, ios::beg);
+    streamu.str("");
+    streamu.clear();
+    fs << "Size of UserPackage = " << pkgu << endl;
     fs.close();
 #endif // MEMTEST
 
