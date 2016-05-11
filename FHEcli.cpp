@@ -2,7 +2,7 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    4096
-#define MEMTEST
+//#define MEMTEST
 //#define TRANSFER
 /***********************************
 Client side program to be handled as

@@ -7,7 +7,7 @@
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
 layer above all of the FHE stuff. Forks itself and executes the
-FHBB binary, using the pipes to and from it.
+FHBB binary, using the pipes to and from it
  ************************************/
 int main(int argc, char * argv[])
 {

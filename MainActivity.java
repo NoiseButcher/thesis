@@ -1,19 +1,14 @@
-package com.example.sharky.fheclient;
+package com.example.sharky.a42588900_thesis;
 
-import android.content.Context;
-import android.net.Uri;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.content.Context;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.provider.Settings;
 import android.content.Intent;
 import android.content.res.AssetManager;
-
-import com.google.android.gms.appindexing.Action;
-import com.google.android.gms.appindexing.AppIndex;
-import com.google.android.gms.common.api.GoogleApiClient;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -22,32 +17,32 @@ import java.io.OutputStreamWriter;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.File;
-
+import java.net.Socket;
 
 public class MainActivity extends AppCompatActivity implements LocationListener {
 
-    /**
-     * ATTENTION: This was auto-generated to implement the App Indexing API.
-     * See https://g.co/AppIndexing/AndroidStudio for more information.
-     */
-    private GoogleApiClient client;
     private LocationManager locationManager;
     private Location location;
-    private String assetpath = "prox_x";
+    private String assetpath = "FHBB_x";
+    private Socket socket = null;
+    private InputStreamReader fromServer;
+    private InputStreamReader fromFHBB;
+    private OutputStreamWriter toServer;
+    private OutputStreamWriter toFHBB;
+    private String host = "localhost";
+    private int port = 55555;
+    private int blocksize = 4096;
+    private char [] buffer = new char[blocksize+1];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        // ATTENTION: This was auto-generated to implement the App Indexing API.
-        // See https://g.co/AppIndexing/AndroidStudio for more information.
-        client = new GoogleApiClient.Builder(this).addApi(AppIndex.API).build();
 
         locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 1, this);
         String exe = copyAssets(assetpath);
-        execprox(exe, location);
-
+        execFHBB(exe, location);
     }
 
     private String copyAssets(String path) {
@@ -55,17 +50,17 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         InputStream in;
         OutputStream out;
         String appFileDir = getFilesDir().getPath();
-        String finalPath = appFileDir + "/prox_x";
-        byte [] buffer;
+        String finalPath = appFileDir + "/FHBB_x";
+        byte [] buf;
         try {
             in = assetManager.open(path);
-            buffer = new byte[in.available()];
-            in.read(buffer);
+            buf = new byte[in.available()];
+            in.read(buf);
             in.close();
 
             File outfile = new File(appFileDir, path);
             out = new FileOutputStream(outfile);
-            out.write(buffer);
+            out.write(buf);
             out.close();
 
         } catch (Exception e) {
@@ -77,15 +72,28 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         return finalPath;
     }
 
-
-    private void execprox(String command, Location location) {
-
+    private void initSocket(int portnum, String hostname) {
         try {
-            Process prox = Runtime.getRuntime().exec(command);
-            InputStreamReader reader = new InputStreamReader(prox.getInputStream());
-            OutputStreamWriter writer = new OutputStreamWriter(prox.getOutputStream());
+            socket = new Socket(hostname, portnum);
+            toServer = new OutputStreamWriter(socket.getOutputStream());
+            fromServer = new InputStreamReader(socket.getInputStream());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void execFHBB(String command, Location location) {
+        try {
+            Process fhbb = Runtime.getRuntime().exec(command);
+            //Diversion of FHBB cout
+            fromFHBB = new InputStreamReader(fhbb.getInputStream());
+            //Diversion of FHBB cin
+            toFHBB =  new OutputStreamWriter(fhbb.getOutputStream());
+            //Open the socket
+            initSocket(port, host);
+
             try {
-                proxInterface(location, reader, writer);
+                fHBBInterface(location, blocksize);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -94,91 +102,277 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         }
     }
 
-    private void proxInterface(Location location, InputStreamReader in, OutputStreamWriter out) throws Exception {
+    private void fHBBInterface(Location location, int blocklen) throws Exception {
 
         try {
-            char[] buffer = new char[256];
-            String dis;
+            install_upkg(buffer, blocklen);
+            getCoords(location, buffer, blocklen);
+            sendLoc(buffer, blocklen);
+            getDist(buffer, blocklen);
+            printDist(buffer, blocklen);
 
             while(true) {
-                //Send GPS coords.
-                pushToProx(out, location);
-                //Read the distances.
-                dis = getProxOutput(buffer, in);
+                getCoords(location, buffer, blocklen);
+                getFHBBACK();
+                sendServerACK();
+                sendLoc(buffer, blocklen);
+                getDist(buffer, blocklen);
+                printDist(buffer, blocklen);
             }
 
         } catch (Exception e) {
             e.printStackTrace();
         }
-
     }
 
-    private String getProxOutput(char[] buffer, InputStreamReader rx) {
-        int rd;
-        //Read the distances from the client process.
+    private void install_upkg (char[] buf, int blocklen) {
         try {
-            while ((rd = rx.read(buffer, 0, 255)) > 0) ;
+            //Transfer Base
+            socketToFHBB(buf, blocklen);
+            //Transfer Context
+            socketToFHBB(buf, blocklen);
+            //Transfer Public Key to server
+            FHBBtoSocket(buf, blocklen);
         } catch (Exception e) {
             e.printStackTrace();
         }
-        //Return them as a string
-        return buffer.toString();
     }
 
-    private void pushToProx(OutputStreamWriter wx, Location location) {
-        int rd;
-        String lat, lng;
-        //Get the current co-ordinates from the GPS thing.
-        lng = Location.convert(location.getLatitude(), Location.FORMAT_DEGREES);
-        lat = Location.convert(location.getLongitude(), Location.FORMAT_DEGREES);
-        //Write the longitude to the client process
+    private void getCoords(Location location, char [] buf, int blocklen){
+        String lat;
+        String lng;
+        StringBuffer stream = null;
+        //Display "Enter Location" or something?
         try {
-            wx.write(lng, 0, lng.length());
-            //Write the latitude to the client process
-            wx.write(lat, 0, lat.length());
+            fHBBtoLocal(buf, blocklen, stream);
+            //Should be X:
+            lng = Location.convert(location.getLatitude(), Location.FORMAT_DEGREES);
+            stream.append(lng);
+            localToFHBB(buf, blocklen, stream);
+            stream = null;
+
+            fHBBtoLocal(buf, blocklen, stream);
+            //Should be Y:
+            stream = null;
+            lat = Location.convert(location.getLongitude(), Location.FORMAT_DEGREES);
+            stream.append(lat);
+            localToFHBB(buf, blocklen, stream);
+            stream = null;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendLoc(char[] buffer, int blocklen) throws Exception {
+        try {
+            while (getServerACK())
+            {
+                sendFHBBACK();
+                getFHBBACK();
+                sendServerACK();
+                socketToFHBB(buffer, blocklen);
+                FHBBtoSocket(buffer, blocklen);
+            }
+            sendFHBBNAK();
+            getServerACK();
+            sendFHBBACK();
+
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
+    private void getDist(char [] buffer, int blocklen) {
+        try {
+            socketToFHBB(buffer, blocklen);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void printDist(char[] buffer, int blocklen) throws Exception {
+        StringBuffer stream = null;
+        fHBBtoLocal(buffer, blocklen, stream);
+        //Print this somehow
+    }
+
+    private int readFromFHBB(char[] buffer, int blocklen) throws Exception {
+        int rd = 0;
+        rd = fromFHBB.read(buffer, 0, blocklen);
+        return rd;
+    }
+
+    private int readFromSocket(char[] buffer, int blocklen) {
+        int rd = 0;
+        try {
+            rd = fromServer.read(buffer, 0, blocklen);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return rd;
+    }
+
+    private void pushToFHBB(char[] buffer, int blocklen) throws Exception {
+        toFHBB.write(buffer, 0, blocklen);
+    }
+
+    private void pushToSocket(char[] buffer, int blocklen) throws Exception {
+        toServer.write(buffer, 0, blocklen);
+    }
+
+    private void localToFHBB (char [] buffer, int blocklen, StringBuffer stream) throws Exception {
+        int k, j;
+        k = 0;
+        j = 0;
+        do {
+            j = k+blocklen;
+            if ((k+blocklen) > stream.length()) {
+                j = stream.length();
+            }
+            else {
+
+            }
+            stream.getChars(k,j, buffer, 0);
+            pushToFHBB(buffer, j-k);
+            terminateFHBBblock();
+            k = j;
+            getFHBBACK();
+            buffer = null;
+        } while ((j-k) == blocklen);
+    }
+
+    private void fHBBtoLocal (char [] buffer, int blocklen, StringBuffer stream) throws Exception {
+        int k;
+        do {
+            k = 0;
+            k = readFromFHBB(buffer, blocklen);
+            stream.append(buffer);
+            buffer = null;
+            sendFHBBACK();
+        } while (k == blocklen);
+    }
+
+    private void localToSocket (char [] buffer, int blocklen, StringBuffer stream) throws Exception {
+        int k, j;
+        k = 0;
+        j = 0;
+        do {
+            j = k+blocklen;
+            if ((k+blocklen) > stream.length()) {
+                j = stream.length();
+            }
+            else {
+
+            }
+            stream.getChars(k,j, buffer, 0);
+            pushToFHBB(buffer, j-k);
+            k = j;
+            getFHBBACK();
+            buffer = null;
+        } while ((j-k) == blocklen);
+    }
+
+    private void socketToLocal (char [] buffer, int blocklen, StringBuffer stream) throws Exception {
+        int k;
+        do {
+            k = 0;
+            k = readFromSocket(buffer, blocklen);
+            stream.append(buffer);
+            buffer = null;
+            sendFHBBACK();
+        } while (k == blocklen);
+    }
+
+    private void socketToFHBB(char [] buffer, int blocklen) throws Exception {
+        int k;
+        do {
+            k = 0;
+            k = readFromSocket(buffer, blocklen);
+            pushToFHBB(buffer, k);
+            terminateFHBBblock();
+            getFHBBACK();
+            sendServerACK();
+        } while (k == blocklen);
+    }
+
+    private void FHBBtoSocket(char [] buffer, int blocklen) throws Exception {
+        int k;
+        do {
+            k = 0;
+            k = readFromFHBB(buffer, blocklen);
+            pushToSocket(buffer, k);
+            getServerACK();
+            sendFHBBACK();
+        } while (k == blocklen);
+    }
+
+    private boolean getServerACK() throws Exception {
+        char [] ack = new char[4];
+        readFromSocket(ack, 3);
+        if (ack.toString() == "ACK") {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+
+    private boolean getFHBBACK() throws Exception {
+        char [] ack = new char[4];
+        readFromFHBB(ack, 3);
+        if (ack.toString() == "ACK") {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+
+    private void sendServerACK() throws Exception {
+        char [] ack = new char[4];
+        ack[0] = 'A';
+        ack[1] = 'C';
+        ack[2] = 'K';
+        ack[3] = '\n';
+        pushToSocket(ack, 4);
+    }
+
+    private void sendFHBBACK() throws Exception {
+        char [] ack = new char[5];
+        ack[0] = 'A';
+        ack[1] = 'C';
+        ack[2] = 'K';
+        ack[3] = '\n';
+        ack[4] = '\0';
+        pushToFHBB(ack, 5);
+    }
+
+    private void sendFHBBNAK() throws Exception {
+        char [] ack = new char[5];
+        ack[0] = 'N';
+        ack[1] = 'A';
+        ack[2] = 'K';
+        ack[3] = '\n';
+        ack[4] = '\0';
+        pushToFHBB(ack, 5);
+    }
+
+    private void terminateFHBBblock() throws Exception {
+        char [] term = new char[2];
+        term[0] = '\n';
+        term[1] = '\0';
+        pushToFHBB(term, 2);
+    }
+
     @Override
     public void onStart() {
-        super.onStart();
 
-        // ATTENTION: This was auto-generated to implement the App Indexing API.
-        // See https://g.co/AppIndexing/AndroidStudio for more information.
-        client.connect();
-        Action viewAction = Action.newAction(
-                Action.TYPE_VIEW, // TODO: choose an action type.
-                "Main Page", // TODO: Define a title for the content shown.
-                // TODO: If you have web page content that matches this app activity's content,
-                // make sure this auto-generated web page URL is correct.
-                // Otherwise, set the URL to null.
-                Uri.parse("http://host/path"),
-                // TODO: Make sure this auto-generated app deep link URI is correct.
-                Uri.parse("android-app://com.example.sharky.fheclient/http/host/path")
-        );
-        AppIndex.AppIndexApi.start(client, viewAction);
     }
 
     @Override
     public void onStop() {
-        super.onStop();
 
-        // ATTENTION: This was auto-generated to implement the App Indexing API.
-        // See https://g.co/AppIndexing/AndroidStudio for more information.
-        Action viewAction = Action.newAction(
-                Action.TYPE_VIEW, // TODO: choose an action type.
-                "Main Page", // TODO: Define a title for the content shown.
-                // TODO: If you have web page content that matches this app activity's content,
-                // make sure this auto-generated web page URL is correct.
-                // Otherwise, set the URL to null.
-                Uri.parse("http://host/path"),
-                // TODO: Make sure this auto-generated app deep link URI is correct.
-                Uri.parse("android-app://com.example.sharky.fheclient/http/host/path")
-        );
-        AppIndex.AppIndexApi.end(client, viewAction);
-        client.disconnect();
     }
 
     @Override

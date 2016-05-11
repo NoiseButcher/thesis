@@ -8,7 +8,7 @@
  *systems. Operates as an I/O function box that pipes
  *GPS data in and outputs an encrypted position. Needs
  *to be executed as a child process to something interfacing
- *with the FHE server. All I/O is done via the cin/cout streams.
+ *with the FHE server. All I/O is done via the cin/cout streams
  ************************************/
 int main(int argc, char * argv[])
 {
@@ -70,7 +70,7 @@ pair<int, int> get_gps(char ** buffer)
 	input.str("");
 	input.clear();
     pipe_in(input, buffer, BUFFSIZE);
-    sleep(0.1);
+    //sleep(0.1);
 	input >> lng;
     input.str("");
 	input.clear();
@@ -200,9 +200,9 @@ void send_location_android(UserPackage * upk, int x, int y,
 
         FHEPubKey * pk = new FHEPubKey(*upk->context);
         pipe_in(stream, buffer, BUFFSIZE);
-        stream.seekg(0, ios::end);
-        cerr << "Public Key at client: " << stream.tellg() << endl;
-        stream.seekg(0, ios::beg);
+        //stream.seekg(0, ios::end);
+        //cerr << "Public Key at client: " << stream.tellg() << endl;
+        //stream.seekg(0, ios::beg);
         try
         {
             stream >> *pk;
