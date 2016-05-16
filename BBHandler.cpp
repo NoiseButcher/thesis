@@ -1,8 +1,6 @@
 #include "BBHandler.h"
-#include <sys/resource.h>
 
 #define BUFFSIZE    4096
-//#define INTEGCHK
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
@@ -126,19 +124,13 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
 {
     string input;
     cout << "Enter a position:" << endl;
-    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str(); //Get "X:"
-    stream.str("");
-    stream.clear();
+    cout << "X: ";
     cin >> input;       //Get integer longitude
     stream << input;
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
     stream.clear();
-    pipe_to_handler(stream, infd, outfd, buffer, blocksize);
-    cout << stream.str(); //Get "Y:"
-    stream.str("");
-    stream.clear();
+    cout << "Y: ";
     cin >> input;       //Get integer latitude
     stream << input;
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);

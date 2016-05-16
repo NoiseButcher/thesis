@@ -17,8 +17,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.File;
 import java.net.Socket;
+import android.util.Log;
 
 public class MainActivity extends Activity {
+
+    private static final String TAG = MainActivity.class.getSimpleName();
 
     private EditText editTextAddress, editTextPort;
     private EditText xParam, yParam;
@@ -77,7 +80,7 @@ public class MainActivity extends Activity {
             out.close();
 
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.d(TAG, "Unable to make FHBB_x executable", e);
         }
 
         File newExe = new File(finalPath);
@@ -97,7 +100,6 @@ public class MainActivity extends Activity {
                 fhe.execute();
             } catch (Exception e) {
                 e.printStackTrace();
-                textResponse.setText("FHBB_x execution failure");
             }
         }
     };
@@ -145,6 +147,10 @@ public class MainActivity extends Activity {
                 fromFHBB = new InputStreamReader(fhbb.getInputStream());
                 //Diversion of FHBB cin
                 toFHBB = new OutputStreamWriter(fhbb.getOutputStream());
+            } catch (Exception e) {
+                Log.d(TAG, "Execution/pipe failure", e);
+            }
+            try {
                 initSocket(portnum, hostname);
                 install_upkg(buffer, blocksz);
                 getCoords(buffer, blocksz);
@@ -169,7 +175,7 @@ public class MainActivity extends Activity {
 
         @Override
         protected void onPostExecute(Void result) {
-            textResponse.setText("FHBB_x terminated");
+            textResponse.setText("FHBB_x terminated - Async finished");
             super.onPostExecute(result);
         }
 
@@ -187,30 +193,34 @@ public class MainActivity extends Activity {
             try {
                 //Transfer Base
                 socketToFHBB(buf, blocklen);
+                textResponse.append("Base got");
                 //Transfer Context
                 socketToFHBB(buf, blocklen);
+                textResponse.append("Context got");
                 //Transfer Public Key to server
                 FHBBtoSocket(buf, blocklen);
+                textResponse.append("PK sent");
             } catch (Exception e) {
+                textResponse.setText("FHBB_x terminated - Install failure");
                 e.printStackTrace();
             }
         }
 
         private void getCoords(char[] buf, int blocklen) {
-            StringBuffer stream = null;
+            StringBuffer stream = new StringBuffer("");
             try {
                 fHBBtoLocal(buf, blocklen, stream);
                 //Should be X:
                 stream.append(lng);
                 localToFHBB(buf, blocklen, stream);
-                stream = null;
+                stream.delete(0, stream.length());
 
                 fHBBtoLocal(buf, blocklen, stream);
                 //Should be Y:
-                stream = null;
+                stream.delete(0, stream.length());
                 stream.append(lat);
                 localToFHBB(buf, blocklen, stream);
-                stream = null;
+                stream.delete(0, stream.length());
 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -244,9 +254,9 @@ public class MainActivity extends Activity {
         }
 
         private void printDist(char[] buffer, int blocklen) throws Exception {
-            StringBuffer stream = null;
+            StringBuffer stream = new StringBuffer("");
             fHBBtoLocal(buffer, blocklen, stream);
-            textResponse.setText(stream.toString());
+            textResponse.append(stream.toString());
         }
 
         private int readFromFHBB(char[] buffer, int blocklen) throws Exception {
@@ -259,6 +269,7 @@ public class MainActivity extends Activity {
             int rd = 0;
             try {
                 rd = fromServer.read(buffer, 0, blocklen);
+                textResponse.append(String.valueOf(rd) + " Bytes read");
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -267,10 +278,12 @@ public class MainActivity extends Activity {
 
         private void pushToFHBB(char[] buffer, int blocklen) throws Exception {
             toFHBB.write(buffer, 0, blocklen);
+            toFHBB.flush();
         }
 
         private void pushToSocket(char[] buffer, int blocklen) throws Exception {
             toServer.write(buffer, 0, blocklen);
+            toServer.flush();
         }
 
         private void localToFHBB(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
@@ -281,15 +294,12 @@ public class MainActivity extends Activity {
                 j = k + blocklen;
                 if ((k + blocklen) > stream.length()) {
                     j = stream.length();
-                } else {
-
                 }
                 stream.getChars(k, j, buffer, 0);
                 pushToFHBB(buffer, j - k);
                 terminateFHBBblock();
                 k = j;
                 getFHBBACK();
-                buffer = null;
             } while ((j - k) == blocklen);
         }
 
@@ -299,7 +309,6 @@ public class MainActivity extends Activity {
                 k = 0;
                 k = readFromFHBB(buffer, blocklen);
                 stream.append(buffer);
-                buffer = null;
                 sendFHBBACK();
             } while (k == blocklen);
         }
@@ -340,6 +349,7 @@ public class MainActivity extends Activity {
                 k = 0;
                 k = readFromSocket(buffer, blocklen);
                 pushToFHBB(buffer, k);
+                textResponse.append(buffer.toString());
                 terminateFHBBblock();
                 getFHBBACK();
                 sendServerACK();

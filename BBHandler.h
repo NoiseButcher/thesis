@@ -1,10 +1,7 @@
 #ifndef BBHANDLER_H
 #define BBHANDLER_H
 
-#include <NTL/lzz_pXFactoring.h>
-#include <NTL/matrix.h>
 #include "FHE.h"
-#include "EncryptedArray.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +14,7 @@
 #include <math.h>
 #include <fstream>
 #include <sstream>
+#include <sys/resource.h>
 #include <signal.h>
 
 /**********

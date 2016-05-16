@@ -2,7 +2,7 @@
 #include <sys/resource.h>
 
 #define BUFFSIZE    4096
-#define TIMING
+//#define TIMING
 //#define MEMTEST
 //#define TRANSFER
 //#define THREADSYNC

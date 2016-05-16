@@ -9,13 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <math.h>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <exception>
+#include <sys/resource.h>
 
 struct UserPackage
 {

@@ -1,8 +1,6 @@
 #include "FHBB.h"
-#include <sys/resource.h>
 
 #define BUFFSIZE    4096
-//#define INTEGCHK
 /***********************************
  *Client side black box program designed for mobile
  *systems. Operates as an I/O function box that pipes
@@ -56,21 +54,13 @@ pair<int, int> get_gps(char ** buffer)
 	bzero(*buffer, sizeof(*buffer));
 	input.str("");
 	input.clear();
-	input << "X:";
-	pipe_out(input, buffer, BUFFSIZE);
-	input.str("");
-	input.clear();
     pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
 	input >> lat;
     input.str("");
 	input.clear();
-	input << "Y:";
-	pipe_out(input, buffer, BUFFSIZE);
-	input.str("");
-	input.clear();
     pipe_in(input, buffer, BUFFSIZE);
-    //sleep(0.1);
+    sleep(0.1);
 	input >> lng;
     input.str("");
 	input.clear();
@@ -200,9 +190,11 @@ void send_location_android(UserPackage * upk, int x, int y,
 
         FHEPubKey * pk = new FHEPubKey(*upk->context);
         pipe_in(stream, buffer, BUFFSIZE);
-        //stream.seekg(0, ios::end);
-        //cerr << "Public Key at client: " << stream.tellg() << endl;
-        //stream.seekg(0, ios::beg);
+        /*
+        stream.seekg(0, ios::end);
+        cerr << "Public Key at client: " << stream.tellg() << endl;
+        stream.seekg(0, ios::beg);
+        */
         try
         {
             stream >> *pk;
