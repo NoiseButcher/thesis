@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -18,6 +19,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.CharArrayReader;
 
 import java.net.Socket;
 import java.lang.Process;
@@ -37,6 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private int blocksize = 4096;
     String lat = "0";
     String lng = "0";
+    boolean haveCoOrds = false;
     Socket socket = null;
 
     @Override
@@ -76,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
                 String portstr = editTextPort.getText().toString();
                 FHEengine fhe = new FHEengine(exepath, editTextAddress.getText().toString(),
                         blocksize, Integer.parseInt(portstr));
-                fhe.execute();
+                fhe.start();
             } catch (Exception e) {
                 Log.d(TAG, "Unable to start FHE Engine", e);
                 textResponse.setText("Unable to start FHE Engine");
@@ -91,6 +94,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 lng = xParam.getText().toString();
                 lat = yParam.getText().toString();
+                haveCoOrds = true;
             } catch (Exception e) {
                 Log.d(TAG, "Unable to Upload GPS", e);
                 textResponse.setText("Unable to Upload GPS");
@@ -110,7 +114,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             in = assetManager.open(path);
             int bytesread;
-            buf = new byte[4096];
+            buf = new byte[in.available()];
             File outfile = new File(appFileDir, path);
             out = new FileOutputStream(outfile);
             while ((bytesread = in.read(buf)) >= 0) {
@@ -135,41 +139,48 @@ public class MainActivity extends AppCompatActivity {
         return finalPath;
     }
 
-    public class FHEengine extends AsyncTask<Void, Void, Void> {
+    public class FHEengine extends Thread {
 
         int blocksz;
-        char[] buffer;
+//        char[] buffer;
+        byte[] buffer;
         int portnum;
         String hostname;
         String cmd;
 
-        InputStreamReader fromServer;
-        OutputStreamWriter toServer;
-        /*
-        InputStreamReader fromFHBB;
+//        InputStreamReader fromServer;
+//        InputStreamReader fromFHBB;
+
         OutputStreamWriter toFHBB;
-        */
-        DataInputStream fromFHBB;
-        DataOutputStream toFHBB;
+        OutputStreamWriter toServer;
+
+//        DataInputStream fromServer
+//        DataInputStream fromFHBB;
+
+//        DataOutputStream toFHBB;
+//        DataOutputStream toServer;
+
+        InputStream fromServer;
+        InputStream fromFHBB;
 
         FHEengine(String path, String host, int blocklen, int port) {
             blocksz = blocklen;
-            buffer = new char[blocksz + 1];
+//            buffer = new char[blocksz+1];
+            buffer = new byte[blocksz+1];
             hostname = host;
             cmd = path;
             portnum = port;
         }
 
         @Override
-        protected Void doInBackground(Void... arg0) {
+        public void run() {
             try {
                 Process fhbb = Runtime.getRuntime().exec(cmd);
-                /*
-                fromFHBB = new InputStreamReader(fhbb.getInputStream()); //this is cout for FHBB_x
-                toFHBB = new OutputStreamWriter(fhbb.getOutputStream()); //this is cin for FHBB_x
-                */
-                fromFHBB = new DataInputStream(fhbb.getInputStream()); //this is cout for FHBB_x
-                toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
+                //fromFHBB = new InputStreamReader(fhbb.getInputStream()); //this is cout for FHBB_x
+                toFHBB = new OutputStreamWriter(fhbb.getOutputStream(), "utf-8"); //this is cin for FHBB_x
+                fromFHBB = fhbb.getInputStream(); //this is cout for FHBB_x
+                //fromFHBB = new DataInputStream(fhbb.getInputStream()); //this is cout for FHBB_x
+//                toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
 
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Execution/Piping to FHBB", e);
@@ -196,26 +207,22 @@ public class MainActivity extends AppCompatActivity {
                 Log.d(TAG, "Crash During Normal Operation", e);
                 e.printStackTrace();
             }
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(Void result) {
-            super.onPostExecute(result);
         }
 
         private void initSocket(int portnum, String hostname) {
             try {
                 socket = new Socket(hostname, portnum);
-                toServer = new OutputStreamWriter(socket.getOutputStream());
-                fromServer = new InputStreamReader(socket.getInputStream());
+                toServer = new OutputStreamWriter(socket.getOutputStream(), "utf-8");
+//                toServer = new DataOutputStream(socket.getOutputStream());
+//                fromServer = new InputStreamReader(socket.getInputStream());
+                fromServer = socket.getInputStream();
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Open Socket", e);
-                //textResponse.setText("Crash During Open Socket");
             }
         }
 
-        private void install_upkg(char[] buf, int blocklen) {
+//        private void install_upkg(char[] buf, int blocklen) {
+        private void install_upkg(byte[] buf, int blocklen) {
             try {
                 //Transfer Base
                 socketToFHBB(buf, blocklen);
@@ -232,29 +239,27 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        private void getCoords(char[] buf, int blocklen) {
+//        private void getCoords(char[] buf, int blocklen) {
+        private void getCoords(byte[] buf, int blocklen) {
             StringBuffer stream = new StringBuffer("");
             try {
-                fHBBtoLocal(buf, blocklen, stream);
-                //Should be X:
+                while (haveCoOrds == false) {}
                 stream.append(lng);
                 localToFHBB(buf, blocklen, stream);
                 stream.delete(0, stream.length());
 
-                fHBBtoLocal(buf, blocklen, stream);
-                //Should be Y:
-                stream.delete(0, stream.length());
                 stream.append(lat);
                 localToFHBB(buf, blocklen, stream);
                 stream.delete(0, stream.length());
+                haveCoOrds = false;
 
             } catch (Exception e) {
                 Log.d(TAG, "Crash During GPS Extraction", e);
-                //textResponse.setText("Crash During GPS Extraction");
             }
         }
 
-        private void sendLoc(char[] buffer, int blocklen) {
+//        private void sendLoc(char[] buffer, int blocklen) {
+        private void sendLoc(byte[] buffer, int blocklen) {
             try {
                 while (getServerACK()) {
                     sendFHBBACK();
@@ -269,11 +274,11 @@ public class MainActivity extends AppCompatActivity {
 
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Location Upload", e);
-                //textResponse.setText("Crash During Location Upload");
             }
         }
 
-        private void getDist(char[] buffer, int blocklen) {
+//        private void getDist(char[] buffer, int blocklen) {
+        private void getDist(byte[] buffer, int blocklen) {
             try {
                 socketToFHBB(buffer, blocklen);
             } catch (Exception e) {
@@ -281,39 +286,67 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        private void printDist(char[] buffer, int blocklen) throws Exception {
+//        private void printDist(char[] buffer, int blocklen) throws Exception {
+        private void printDist(byte[] buffer, int blocklen) throws Exception {
             StringBuffer stream = new StringBuffer("");
             fHBBtoLocal(buffer, blocklen, stream);
             textResponse.setText(stream.toString());
         }
 
-        private int readFromFHBB(char[] buffer, int blocklen) throws Exception {
-            int rd = 0;
-            byte [] tmp = new byte[blocklen+1];
-            //rd = fromFHBB.read(buffer, 0, blocklen);
-            rd = fromFHBB.read(tmp, 0,  blocklen);
-            buffer = tmp.toString().toCharArray();
+//        private int readFromFHBB(char[] buffer, int blocklen) throws Exception {
+        private int readFromFHBB(byte[] buffer, int blocklen) throws Exception {
+            DataInputStream reader = new DataInputStream(fromFHBB);
+//            InputStreamReader reader = new InputStreamReader(fromFHBB, "utf-8");
+            int i = fromFHBB.available();
+            int rd;
+            if (i < blocklen) {
+                reader.read(buffer, 0, blocklen);
+                rd = i;
+            } else {
+                rd = reader.read(buffer, 0, blocklen);
+            }
+            byte[] buf2 = purgeFilth(buffer);
+            String str = new String(buf2, "utf-8");
+            Log.d(TAG, "From FHBB: " + str);
             return rd;
         }
 
-        private int readFromSocket(char[] buffer, int blocklen) throws Exception {
-            int rd = 0;
-            rd = fromServer.read(buffer, 0, blocklen);
+//        private int readFromSocket(char[] buffer, int blocklen) throws Exception {
+        private int readFromSocket(byte[] buffer, int blocklen) throws Exception {
+            DataInputStream reader = new DataInputStream(fromServer);
+//            InputStreamReader reader = new InputStreamReader(fromServer, "utf-8");
+            int rd;
+            int i = fromServer.available();
+            if (i < blocklen) {
+                reader.read(buffer, 0, blocklen);
+                rd = i;
+            } else {
+                rd = reader.read(buffer, 0, blocklen);
+            }
+            byte[] buf2 = purgeFilth(buffer);
+            String str = new String(buf2, "utf-8");
+            Log.d(TAG, "From Server: " + str);
             return rd;
         }
 
-        private void pushToFHBB(char[] buffer, int blocklen) throws Exception {
-            toFHBB.writeBytes(buffer.toString());
-            //toFHBB.write(buffer, 0, blocklen);
+//        private void pushToFHBB(char[] buffer, int blocklen) throws Exception {
+        private void pushToFHBB(byte[] buffer, int blocklen) throws Exception {
+            String output = new String(buffer, "utf-8");
+            Log.d(TAG, "To FHBB: " + output);
+            toFHBB.write(output);
             toFHBB.flush();
         }
 
-        private void pushToSocket(char[] buffer, int blocklen) throws Exception {
-            toServer.write(buffer, 0, blocklen);
+//        private void pushToSocket(char[] buffer, int blocklen) throws Exception {
+        private void pushToSocket(byte[] buffer, int blocklen) throws Exception {
+            String output = new String(buffer, "utf-8");
+            Log.d(TAG, "To Server: " + output);
+            toServer.write(output);
             toServer.flush();
         }
 
-        private void localToFHBB(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
+//        private void localToFHBB(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
+        private void localToFHBB(byte[] buffer, int blocklen, StringBuffer stream) throws Exception {
             int k, j;
             k = 0;
             j = 0;
@@ -322,81 +355,61 @@ public class MainActivity extends AppCompatActivity {
                 if ((k + blocklen) > stream.length()) {
                     j = stream.length();
                 }
-                stream.getChars(k, j, buffer, 0);
+//                TODO FIX ME IM FUCKED
+//                stream.getChars(k, j, buffer, 0);
                 pushToFHBB(buffer, j - k);
-                terminateFHBBblock();
+                //terminateFHBBblock();
                 k = j;
                 getFHBBACK();
             } while ((j - k) == blocklen);
         }
 
-        private void fHBBtoLocal(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
+//        private void fHBBtoLocal(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
+        private void fHBBtoLocal(byte[] buffer, int blocklen, StringBuffer stream) throws Exception {
             int k;
+
             do {
                 k = 0;
                 k = readFromFHBB(buffer, blocklen);
-                stream.append(buffer);
+                String str = new String(purgeFilth(buffer), "utf-8");
+                stream.append(str);
                 sendFHBBACK();
             } while (k == blocklen);
         }
 
-        private void localToSocket(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
-            int k, j;
-            k = 0;
-            j = 0;
-            do {
-                j = k + blocklen;
-                if ((k + blocklen) > stream.length()) {
-                    j = stream.length();
-                } else {
-
-                }
-                stream.getChars(k, j, buffer, 0);
-                pushToFHBB(buffer, j - k);
-                k = j;
-                getFHBBACK();
-                buffer = null;
-            } while ((j - k) == blocklen);
-        }
-
-        private void socketToLocal(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
+//        private void socketToFHBB(char[] buffer, int blocklen) throws Exception {
+        private void socketToFHBB(byte[] buffer, int blocklen) throws Exception {
             int k;
             do {
                 k = 0;
                 k = readFromSocket(buffer, blocklen);
-                stream.append(buffer);
-                buffer = null;
-                sendFHBBACK();
-            } while (k == blocklen);
-        }
-
-        private void socketToFHBB(char[] buffer, int blocklen) throws Exception {
-            int k;
-            do {
-                k = 0;
-                k = readFromSocket(buffer, blocklen);
-                pushToFHBB(buffer, k);
-                terminateFHBBblock();
-                getFHBBACK();
+                pushToFHBB(purgeFilth(buffer), k);
+                //terminateFHBBblock();
+                if (!getFHBBACK()) {
+                    Log.d(TAG, "NO ACK");
+            }
                 sendServerACK();
             } while (k == blocklen);
         }
 
-        private void FHBBtoSocket(char[] buffer, int blocklen) throws Exception {
+//        private void FHBBtoSocket(char[] buffer, int blocklen) throws Exception {
+        private void FHBBtoSocket(byte[] buffer, int blocklen) throws Exception {
             int k;
             do {
                 k = 0;
                 k = readFromFHBB(buffer, blocklen);
-                pushToSocket(buffer, k);
+                pushToSocket(purgeFilth(buffer), k);
                 getServerACK();
                 sendFHBBACK();
             } while (k == blocklen);
         }
 
         private boolean getServerACK() throws Exception {
-            char[] ack = new char[4];
-            readFromSocket(ack, 3);
-            if (ack.toString() == "ACK") {
+            byte[] ack = new byte[4];
+//            char[] ack = new char[4];
+            readFromSocket(ack, 4);
+            String ref = new String(purgeFilth(ack), "utf-8");
+            if (ref == "ACK") {
                 return true;
             } else {
                 return false;
@@ -404,9 +417,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private boolean getFHBBACK() throws Exception {
-            char[] ack = new char[4];
-            readFromFHBB(ack, 3);
-            if (ack.toString() == "ACK") {
+            byte[] ack = new byte[4];
+//            char[] ack = new char[4];
+            readFromFHBB(ack, 4);
+            String ref = new String(purgeFilth(ack), "utf-8");
+            if (ref == "ACK") {
                 return true;
             } else {
                 return false;
@@ -414,16 +429,18 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void sendServerACK() throws Exception {
-            char[] ack = new char[4];
+            byte[] ack = new byte[4];
+//            char[] ack = new char[4];
             ack[0] = 'A';
             ack[1] = 'C';
             ack[2] = 'K';
-            ack[3] = '\n';
+            ack[3] = '\0';
             pushToSocket(ack, 4);
         }
 
         private void sendFHBBACK() throws Exception {
-            char[] ack = new char[5];
+            byte[] ack = new byte[5];
+//            char[] ack = new char[5];
             ack[0] = 'A';
             ack[1] = 'C';
             ack[2] = 'K';
@@ -433,7 +450,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void sendFHBBNAK() throws Exception {
-            char[] ack = new char[5];
+            byte[] ack = new byte[5];
+//            char[] ack = new char[5];
             ack[0] = 'N';
             ack[1] = 'A';
             ack[2] = 'K';
@@ -443,10 +461,30 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void terminateFHBBblock() throws Exception {
-            char[] term = new char[2];
+//            char[] term = new char[2];
+            byte[] term = new byte[2];
             term[0] = '\n';
             term[1] = '\0';
             pushToFHBB(term, 2);
+        }
+
+        private byte [] purgeFilth(byte[] victim) throws Exception {
+            int j = 0;
+            while (((victim[j] < 32) || (victim[j] > 126)) && (j < (victim.length-1))) j++;
+            if (victim.length == j) {
+                byte [] out = new byte[1];
+                out[0] = '\0';
+                return out;
+            }
+
+            int i = j;
+            while ((victim[i] > 31) && (victim[i] < 127) && (i < (victim.length-1))) i++;
+            if ((j==0) && (i==victim.length)) return victim;
+
+            ByteArrayInputStream good = new ByteArrayInputStream(victim, j, i-1);
+            byte[] out = new byte[i-1];
+            good.read(out, 0, good.available());
+            return out;
         }
     }
 }
