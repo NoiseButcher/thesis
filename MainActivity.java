@@ -1,43 +1,49 @@
-package com.example.sharky.a42588900_thesis;
+package sharktank.pinger;
 
-import android.app.Activity;
+import android.support.v7.app.AppCompatActivity;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.content.res.AssetManager;
-import android.view.View;
-import android.view.View.OnClickListener;
-import android.widget.EditText;
-import android.widget.Button;
-import android.widget.TextView;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.File;
-import java.net.Socket;
 import android.util.Log;
 
-public class MainActivity extends Activity {
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TextView;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+
+import java.net.Socket;
+import java.lang.Process;
+
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
 
     private EditText editTextAddress, editTextPort;
     private EditText xParam, yParam;
     private Button buttonUpload;
-    private Button buttonConnect, buttonClear;
+    private Button buttonConnect, buttonDC;
     private TextView textResponse;
 
     private String assetpath = "FHBB_x";
+    private String exepath = "";
     private int blocksize = 4096;
     String lat = "0";
     String lng = "0";
+    Socket socket = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        exepath = copyAssets(assetpath);
 
         xParam = (EditText) findViewById(R.id.lng);
         yParam = (EditText) findViewById(R.id.lat);
@@ -46,65 +52,39 @@ public class MainActivity extends Activity {
         editTextAddress = (EditText) findViewById(R.id.address);
         editTextPort = (EditText) findViewById(R.id.port);
         buttonConnect = (Button) findViewById(R.id.connect);
-        buttonClear = (Button) findViewById(R.id.clear);
+        buttonDC = (Button) findViewById(R.id.discon);
         textResponse = (TextView) findViewById(R.id.response);
 
         buttonConnect.setOnClickListener(buttonConnectOnClickListener);
-
-        buttonClear.setOnClickListener(new OnClickListener() {
+        buttonUpload.setOnClickListener(buttonUploadOnClickListener);
+        buttonDC.setOnClickListener(new View.OnClickListener() {
                                            @Override
                                            public void onClick(View v) {
-                                               textResponse.setText("");
-                                           }
-                                       }
-                                        );
-        buttonUpload.setOnClickListener(buttonUploadOnClickListener);
+                                               try {
+                                                   socket.close();
+                                               } catch (Exception e) {
+                                                   Log.d(TAG, "Cannot Close Socket, you are part of Legion now.", e);
+                                                   textResponse.setText("Cannot Close Socket, you are part of Legion now.");
+                                               }}});
     }
 
-    private String copyAssets(String path) {
-        AssetManager assetManager = getAssets();
-        InputStream in;
-        OutputStream out;
-        String appFileDir = getFilesDir().getPath();
-        String finalPath = appFileDir + "/FHBB_x";
-        byte[] buf;
-        try {
-            in = assetManager.open(path);
-            buf = new byte[in.available()];
-            in.read(buf);
-            in.close();
-
-            File outfile = new File(appFileDir, path);
-            out = new FileOutputStream(outfile);
-            out.write(buf);
-            out.close();
-
-        } catch (Exception e) {
-            Log.d(TAG, "Unable to make FHBB_x executable", e);
-        }
-
-        File newExe = new File(finalPath);
-        newExe.setExecutable(true);
-        return finalPath;
-    }
-
-    OnClickListener buttonConnectOnClickListener = new OnClickListener() {
+    private View.OnClickListener buttonConnectOnClickListener = new View.OnClickListener() {
 
         @Override
         public void onClick(View arg0) {
             try {
-                String exe = copyAssets(assetpath);
                 String portstr = editTextPort.getText().toString();
-                FHEengine fhe = new FHEengine(exe, editTextAddress.getText().toString(),
-                                                blocksize, Integer.parseInt(portstr));
+                FHEengine fhe = new FHEengine(exepath, editTextAddress.getText().toString(),
+                        blocksize, Integer.parseInt(portstr));
                 fhe.execute();
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.d(TAG, "Unable to start FHE Engine", e);
+                textResponse.setText("Unable to start FHE Engine");
             }
         }
     };
 
-    OnClickListener buttonUploadOnClickListener = new OnClickListener() {
+    View.OnClickListener buttonUploadOnClickListener = new View.OnClickListener() {
 
         @Override
         public void onClick(View arg0) {
@@ -112,10 +92,48 @@ public class MainActivity extends Activity {
                 lng = xParam.getText().toString();
                 lat = yParam.getText().toString();
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.d(TAG, "Unable to Upload GPS", e);
+                textResponse.setText("Unable to Upload GPS");
             }
         }
     };
+
+    private String copyAssets(String path) {
+        AssetManager assetManager = getAssets();
+        InputStream in;
+        FileOutputStream out;
+        String appFileDir = getFilesDir().getPath();
+        /*** data/user/0/sharktank.pinger/files/ ***/
+        String finalPath = appFileDir + "/FHBB_x";
+        Log.d(TAG, finalPath);
+        byte[] buf;
+        try {
+            in = assetManager.open(path);
+            int bytesread;
+            buf = new byte[4096];
+            File outfile = new File(appFileDir, path);
+            out = new FileOutputStream(outfile);
+            while ((bytesread = in.read(buf)) >= 0) {
+                out.write(buf, 0, bytesread);
+            }
+
+            in.close();
+            out.close();
+
+        } catch (Exception e) {
+            Log.d(TAG, "Unable to make FHBB_x executable", e);
+            textResponse.setText("Unable to make FHBB_x executable");
+        }
+
+        File newExe = new File(finalPath);
+        try {
+            Process process = Runtime.getRuntime().exec("/system/bin/chmod 744 /data/user/0/sharktank.pinger/files/FHBB_x");
+        } catch (Exception e) {
+            Log.d(TAG, "Unable to change FHBB_x permissions", e);
+        }
+        newExe.setExecutable(true);
+        return finalPath;
+    }
 
     public class FHEengine extends AsyncTask<Void, Void, Void> {
 
@@ -124,12 +142,15 @@ public class MainActivity extends Activity {
         int portnum;
         String hostname;
         String cmd;
-        Socket socket = null;
 
         InputStreamReader fromServer;
-        InputStreamReader fromFHBB;
         OutputStreamWriter toServer;
+        /*
+        InputStreamReader fromFHBB;
         OutputStreamWriter toFHBB;
+        */
+        DataInputStream fromFHBB;
+        DataOutputStream toFHBB;
 
         FHEengine(String path, String host, int blocklen, int port) {
             blocksz = blocklen;
@@ -143,12 +164,16 @@ public class MainActivity extends Activity {
         protected Void doInBackground(Void... arg0) {
             try {
                 Process fhbb = Runtime.getRuntime().exec(cmd);
-                //Diversion of FHBB cout
-                fromFHBB = new InputStreamReader(fhbb.getInputStream());
-                //Diversion of FHBB cin
-                toFHBB = new OutputStreamWriter(fhbb.getOutputStream());
+                /*
+                fromFHBB = new InputStreamReader(fhbb.getInputStream()); //this is cout for FHBB_x
+                toFHBB = new OutputStreamWriter(fhbb.getOutputStream()); //this is cin for FHBB_x
+                */
+                fromFHBB = new DataInputStream(fhbb.getInputStream()); //this is cout for FHBB_x
+                toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
+
             } catch (Exception e) {
-                Log.d(TAG, "Execution/pipe failure", e);
+                Log.d(TAG, "Crash During Execution/Piping to FHBB", e);
+                e.printStackTrace();
             }
             try {
                 initSocket(portnum, hostname);
@@ -168,6 +193,7 @@ public class MainActivity extends Activity {
                 }
 
             } catch (Exception e) {
+                Log.d(TAG, "Crash During Normal Operation", e);
                 e.printStackTrace();
             }
             return null;
@@ -175,7 +201,6 @@ public class MainActivity extends Activity {
 
         @Override
         protected void onPostExecute(Void result) {
-            textResponse.setText("FHBB_x terminated - Async finished");
             super.onPostExecute(result);
         }
 
@@ -185,7 +210,8 @@ public class MainActivity extends Activity {
                 toServer = new OutputStreamWriter(socket.getOutputStream());
                 fromServer = new InputStreamReader(socket.getInputStream());
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.d(TAG, "Crash During Open Socket", e);
+                //textResponse.setText("Crash During Open Socket");
             }
         }
 
@@ -193,16 +219,16 @@ public class MainActivity extends Activity {
             try {
                 //Transfer Base
                 socketToFHBB(buf, blocklen);
-                textResponse.append("Base got");
+                Log.d(TAG, "Base got");
                 //Transfer Context
                 socketToFHBB(buf, blocklen);
-                textResponse.append("Context got");
+                Log.d(TAG, "Context got");
                 //Transfer Public Key to server
                 FHBBtoSocket(buf, blocklen);
-                textResponse.append("PK sent");
+                Log.d(TAG, "PK sent");
             } catch (Exception e) {
-                textResponse.setText("FHBB_x terminated - Install failure");
-                e.printStackTrace();
+                Log.d(TAG, "Crash During Install FHE", e);
+                //textResponse.setText("Crash During Install FHE");
             }
         }
 
@@ -223,11 +249,12 @@ public class MainActivity extends Activity {
                 stream.delete(0, stream.length());
 
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.d(TAG, "Crash During GPS Extraction", e);
+                //textResponse.setText("Crash During GPS Extraction");
             }
         }
 
-        private void sendLoc(char[] buffer, int blocklen) throws Exception {
+        private void sendLoc(char[] buffer, int blocklen) {
             try {
                 while (getServerACK()) {
                     sendFHBBACK();
@@ -240,8 +267,9 @@ public class MainActivity extends Activity {
                 getServerACK();
                 sendFHBBACK();
 
-            } catch (IOException e) {
-                e.printStackTrace();
+            } catch (Exception e) {
+                Log.d(TAG, "Crash During Location Upload", e);
+                //textResponse.setText("Crash During Location Upload");
             }
         }
 
@@ -249,35 +277,34 @@ public class MainActivity extends Activity {
             try {
                 socketToFHBB(buffer, blocklen);
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.d(TAG, "Crash During Distance Download", e);
             }
         }
 
         private void printDist(char[] buffer, int blocklen) throws Exception {
             StringBuffer stream = new StringBuffer("");
             fHBBtoLocal(buffer, blocklen, stream);
-            textResponse.append(stream.toString());
+            textResponse.setText(stream.toString());
         }
 
         private int readFromFHBB(char[] buffer, int blocklen) throws Exception {
             int rd = 0;
-            rd = fromFHBB.read(buffer, 0, blocklen);
+            byte [] tmp = new byte[blocklen+1];
+            //rd = fromFHBB.read(buffer, 0, blocklen);
+            rd = fromFHBB.read(tmp, 0,  blocklen);
+            buffer = tmp.toString().toCharArray();
             return rd;
         }
 
-        private int readFromSocket(char[] buffer, int blocklen) {
+        private int readFromSocket(char[] buffer, int blocklen) throws Exception {
             int rd = 0;
-            try {
-                rd = fromServer.read(buffer, 0, blocklen);
-                textResponse.append(String.valueOf(rd) + " Bytes read");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            rd = fromServer.read(buffer, 0, blocklen);
             return rd;
         }
 
         private void pushToFHBB(char[] buffer, int blocklen) throws Exception {
-            toFHBB.write(buffer, 0, blocklen);
+            toFHBB.writeBytes(buffer.toString());
+            //toFHBB.write(buffer, 0, blocklen);
             toFHBB.flush();
         }
 
@@ -349,7 +376,6 @@ public class MainActivity extends Activity {
                 k = 0;
                 k = readFromSocket(buffer, blocklen);
                 pushToFHBB(buffer, k);
-                textResponse.append(buffer.toString());
                 terminateFHBBblock();
                 getFHBBACK();
                 sendServerACK();
