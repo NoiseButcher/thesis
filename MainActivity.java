@@ -1,7 +1,6 @@
 package sharktank.pinger;
 
 import android.support.v7.app.AppCompatActivity;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.content.res.AssetManager;
 import android.util.Log;
@@ -17,9 +16,6 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.CharArrayReader;
 
 import java.net.Socket;
 import java.lang.Process;
@@ -72,7 +68,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private View.OnClickListener buttonConnectOnClickListener = new View.OnClickListener() {
-
         @Override
         public void onClick(View arg0) {
             try {
@@ -142,30 +137,19 @@ public class MainActivity extends AppCompatActivity {
     public class FHEengine extends Thread {
 
         int blocksz;
-//        char[] buffer;
         byte[] buffer;
         int portnum;
         String hostname;
         String cmd;
 
-//        InputStreamReader fromServer;
-//        InputStreamReader fromFHBB;
-
-        OutputStreamWriter toFHBB;
-        OutputStreamWriter toServer;
-
-//        DataInputStream fromServer
-//        DataInputStream fromFHBB;
-
-//        DataOutputStream toFHBB;
-//        DataOutputStream toServer;
+        DataOutputStream toFHBB;
+        DataOutputStream toServer;
 
         InputStream fromServer;
         InputStream fromFHBB;
 
         FHEengine(String path, String host, int blocklen, int port) {
             blocksz = blocklen;
-//            buffer = new char[blocksz+1];
             buffer = new byte[blocksz+1];
             hostname = host;
             cmd = path;
@@ -176,12 +160,9 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             try {
                 Process fhbb = Runtime.getRuntime().exec(cmd);
-                //fromFHBB = new InputStreamReader(fhbb.getInputStream()); //this is cout for FHBB_x
-                toFHBB = new OutputStreamWriter(fhbb.getOutputStream(), "utf-8"); //this is cin for FHBB_x
-                fromFHBB = fhbb.getInputStream(); //this is cout for FHBB_x
-                //fromFHBB = new DataInputStream(fhbb.getInputStream()); //this is cout for FHBB_x
-//                toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
 
+                fromFHBB = fhbb.getInputStream(); //this is cout for FHBB_x
+                toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Execution/Piping to FHBB", e);
                 e.printStackTrace();
@@ -212,34 +193,26 @@ public class MainActivity extends AppCompatActivity {
         private void initSocket(int portnum, String hostname) {
             try {
                 socket = new Socket(hostname, portnum);
-                toServer = new OutputStreamWriter(socket.getOutputStream(), "utf-8");
-//                toServer = new DataOutputStream(socket.getOutputStream());
-//                fromServer = new InputStreamReader(socket.getInputStream());
+                toServer = new DataOutputStream(socket.getOutputStream());
                 fromServer = socket.getInputStream();
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Open Socket", e);
             }
         }
 
-//        private void install_upkg(char[] buf, int blocklen) {
         private void install_upkg(byte[] buf, int blocklen) {
             try {
-                //Transfer Base
                 socketToFHBB(buf, blocklen);
                 Log.d(TAG, "Base got");
-                //Transfer Context
                 socketToFHBB(buf, blocklen);
                 Log.d(TAG, "Context got");
-                //Transfer Public Key to server
                 FHBBtoSocket(buf, blocklen);
                 Log.d(TAG, "PK sent");
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Install FHE", e);
-                //textResponse.setText("Crash During Install FHE");
             }
         }
 
-//        private void getCoords(char[] buf, int blocklen) {
         private void getCoords(byte[] buf, int blocklen) {
             StringBuffer stream = new StringBuffer("");
             try {
@@ -258,7 +231,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-//        private void sendLoc(char[] buffer, int blocklen) {
         private void sendLoc(byte[] buffer, int blocklen) {
             try {
                 while (getServerACK()) {
@@ -277,7 +249,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-//        private void getDist(char[] buffer, int blocklen) {
         private void getDist(byte[] buffer, int blocklen) {
             try {
                 socketToFHBB(buffer, blocklen);
@@ -286,66 +257,62 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-//        private void printDist(char[] buffer, int blocklen) throws Exception {
         private void printDist(byte[] buffer, int blocklen) throws Exception {
             StringBuffer stream = new StringBuffer("");
             fHBBtoLocal(buffer, blocklen, stream);
             textResponse.setText(stream.toString());
         }
 
-//        private int readFromFHBB(char[] buffer, int blocklen) throws Exception {
         private int readFromFHBB(byte[] buffer, int blocklen) throws Exception {
             DataInputStream reader = new DataInputStream(fromFHBB);
-//            InputStreamReader reader = new InputStreamReader(fromFHBB, "utf-8");
             int i = fromFHBB.available();
+            if (i==0) return 0;
             int rd;
             if (i < blocklen) {
-                reader.read(buffer, 0, blocklen);
+                reader.read(buffer, 0, i);
                 rd = i;
             } else {
                 rd = reader.read(buffer, 0, blocklen);
             }
-            byte[] buf2 = purgeFilth(buffer);
+            byte [] buf2 = purgeFilth(buffer);
+            buffer = buf2;
             String str = new String(buf2, "utf-8");
             Log.d(TAG, "From FHBB: " + str);
             return rd;
         }
 
-//        private int readFromSocket(char[] buffer, int blocklen) throws Exception {
         private int readFromSocket(byte[] buffer, int blocklen) throws Exception {
             DataInputStream reader = new DataInputStream(fromServer);
-//            InputStreamReader reader = new InputStreamReader(fromServer, "utf-8");
-            int rd;
             int i = fromServer.available();
+            int rd;
+            if (i==0) return 0;
             if (i < blocklen) {
-                reader.read(buffer, 0, blocklen);
+                reader.read(buffer, 0, i);
                 rd = i;
             } else {
                 rd = reader.read(buffer, 0, blocklen);
             }
-            byte[] buf2 = purgeFilth(buffer);
-            String str = new String(buf2, "utf-8");
-            Log.d(TAG, "From Server: " + str);
+            byte [] buf2 = purgeFilth(buffer);
+            buffer = buf2;
             return rd;
         }
 
-//        private void pushToFHBB(char[] buffer, int blocklen) throws Exception {
         private void pushToFHBB(byte[] buffer, int blocklen) throws Exception {
-            String output = new String(buffer, "utf-8");
-            Log.d(TAG, "To FHBB: " + output);
-            toFHBB.write(output);
+            toFHBB.write(buffer, 0, blocklen);
+//            String output = new String(buffer, "utf-8");
+//            output += "\n\0";
+//            Log.d(TAG, "To FHBB: " + output);
+//            toFHBB.writeBytes(output);
             toFHBB.flush();
         }
 
-//        private void pushToSocket(char[] buffer, int blocklen) throws Exception {
-        private void pushToSocket(byte[] buffer, int blocklen) throws Exception {
+        private void pushToSocket(byte[] buffer) throws Exception {
             String output = new String(buffer, "utf-8");
-            Log.d(TAG, "To Server: " + output);
-            toServer.write(output);
+            output += "\0";
+            toServer.writeBytes(output);
             toServer.flush();
         }
 
-//        private void localToFHBB(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
         private void localToFHBB(byte[] buffer, int blocklen, StringBuffer stream) throws Exception {
             int k, j;
             k = 0;
@@ -355,16 +322,15 @@ public class MainActivity extends AppCompatActivity {
                 if ((k + blocklen) > stream.length()) {
                     j = stream.length();
                 }
-//                TODO FIX ME IM FUCKED
-//                stream.getChars(k, j, buffer, 0);
-                pushToFHBB(buffer, j - k);
+                toFHBB.writeBytes(stream.substring(k, j));
+                toFHBB.flush();
+//                pushToFHBB(buffer, j - k);
                 //terminateFHBBblock();
                 k = j;
                 getFHBBACK();
             } while ((j - k) == blocklen);
         }
 
-//        private void fHBBtoLocal(char[] buffer, int blocklen, StringBuffer stream) throws Exception {
         private void fHBBtoLocal(byte[] buffer, int blocklen, StringBuffer stream) throws Exception {
             int k;
 
@@ -377,39 +343,34 @@ public class MainActivity extends AppCompatActivity {
             } while (k == blocklen);
         }
 
-//        private void socketToFHBB(char[] buffer, int blocklen) throws Exception {
         private void socketToFHBB(byte[] buffer, int blocklen) throws Exception {
             int k;
             do {
                 k = 0;
                 k = readFromSocket(buffer, blocklen);
-                pushToFHBB(purgeFilth(buffer), k);
+                pushToFHBB(buffer, k);
                 //terminateFHBBblock();
-                if (!getFHBBACK()) {
-                    Log.d(TAG, "NO ACK");
-            }
+                getFHBBACK();
                 sendServerACK();
             } while (k == blocklen);
         }
 
-//        private void FHBBtoSocket(char[] buffer, int blocklen) throws Exception {
         private void FHBBtoSocket(byte[] buffer, int blocklen) throws Exception {
             int k;
             do {
                 k = 0;
                 k = readFromFHBB(buffer, blocklen);
-                pushToSocket(purgeFilth(buffer), k);
+                pushToSocket(buffer);
                 getServerACK();
                 sendFHBBACK();
             } while (k == blocklen);
         }
 
         private boolean getServerACK() throws Exception {
-            byte[] ack = new byte[4];
-//            char[] ack = new char[4];
-            readFromSocket(ack, 4);
+            byte[] ack = new byte[blocksz+1];
+            readFromSocket(ack, blocksz);
             String ref = new String(purgeFilth(ack), "utf-8");
-            if (ref == "ACK") {
+            if (ref.equals("ACK")) {
                 return true;
             } else {
                 return false;
@@ -418,10 +379,10 @@ public class MainActivity extends AppCompatActivity {
 
         private boolean getFHBBACK() throws Exception {
             byte[] ack = new byte[4];
-//            char[] ack = new char[4];
             readFromFHBB(ack, 4);
             String ref = new String(purgeFilth(ack), "utf-8");
-            if (ref == "ACK") {
+            Log.d(TAG, "ACK == " + ref);
+            if (ref.equals("ACK")) {
                 return true;
             } else {
                 return false;
@@ -430,38 +391,34 @@ public class MainActivity extends AppCompatActivity {
 
         private void sendServerACK() throws Exception {
             byte[] ack = new byte[4];
-//            char[] ack = new char[4];
             ack[0] = 'A';
             ack[1] = 'C';
             ack[2] = 'K';
             ack[3] = '\0';
-            pushToSocket(ack, 4);
+            pushToSocket(ack);
         }
 
         private void sendFHBBACK() throws Exception {
             byte[] ack = new byte[5];
-//            char[] ack = new char[5];
             ack[0] = 'A';
             ack[1] = 'C';
             ack[2] = 'K';
             ack[3] = '\n';
-            ack[4] = '\0';
-            pushToFHBB(ack, 5);
+            ack[3] = '\0';
+            pushToFHBB(ack, 4);
         }
 
         private void sendFHBBNAK() throws Exception {
-            byte[] ack = new byte[5];
-//            char[] ack = new char[5];
+            byte[] ack = new byte[4];
             ack[0] = 'N';
             ack[1] = 'A';
             ack[2] = 'K';
             ack[3] = '\n';
-            ack[4] = '\0';
+            ack[3] = '\0';
             pushToFHBB(ack, 5);
         }
 
         private void terminateFHBBblock() throws Exception {
-//            char[] term = new char[2];
             byte[] term = new byte[2];
             term[0] = '\n';
             term[1] = '\0';
@@ -476,13 +433,11 @@ public class MainActivity extends AppCompatActivity {
                 out[0] = '\0';
                 return out;
             }
-
             int i = j;
             while ((victim[i] > 31) && (victim[i] < 127) && (i < (victim.length-1))) i++;
             if ((j==0) && (i==victim.length)) return victim;
-
-            ByteArrayInputStream good = new ByteArrayInputStream(victim, j, i-1);
-            byte[] out = new byte[i-1];
+            ByteArrayInputStream good = new ByteArrayInputStream(victim, j, i);
+            byte[] out = new byte[i];
             good.read(out, 0, good.available());
             return out;
         }

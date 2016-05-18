@@ -92,10 +92,12 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     bzero(*buffer, sizeof(*buffer));
     writeContextBase(stream, *sd->context);
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
+
+
+    cout << "Base File streaming complete: " <<endl;
     stream.str("");
     stream.clear();
 
-    cout << "Base File streaming complete." << endl;
     try
     {
         stream << *sd->context;
@@ -107,10 +109,11 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
         exit(3);
     }
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
+
+    cout << "Context Stream Complete " << endl;
     stream.str("");
     stream.clear();
 
-    cout << "Context Stream Complete." << endl;
     socket_to_stream(stream, buffer, sl, BUFFSIZE);
     Cluster cx(*sd->context);
     try
@@ -635,7 +638,8 @@ void prepare_server_socket(ServerLink * sl, char * argv[])
 int stream_from_socket(char ** buffer, int blocksize, ClientLink * sl)
 {
     bzero(*buffer, sizeof(*buffer));
-    return sl->xfer = read(sl->sockFD, *buffer, blocksize);
+    sl->xfer = read(sl->sockFD, *buffer, blocksize);
+    return sl->xfer;
 }
 
 /*****
@@ -698,6 +702,7 @@ bool recv_ack(ClientLink * sl)
 {
     char * buffer = new char[4];
     char * ack = new char[4];
+
     bzero(buffer, sizeof(buffer));
     bzero(ack, sizeof(ack));
     ack[0] = 'A';
@@ -705,8 +710,9 @@ bool recv_ack(ClientLink * sl)
     ack[2] = 'K';
     ack[3] = '\0';
     if (stream_from_socket(&buffer,
-                           sizeof(buffer), sl) == sizeof(ack))
+                           sizeof(buffer), sl) <= sizeof(buffer))
     {
+        buffer[3] = '\0';
         if (strcmp(ack, buffer) == 0)
         {
             delete [] buffer;
