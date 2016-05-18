@@ -22,6 +22,7 @@ int main(int argc, char * argv[])
         return 0;
     }
 
+    cout << "SPAWN MORE OVERLORDS" << endl;
     install_upkg_android(&me, &buffer);
     pair <int, int> loc = get_gps(&buffer);
     send_location_android(&me, loc.first, loc.second, &buffer);

@@ -15,6 +15,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 
 import java.net.Socket;
@@ -37,6 +38,12 @@ public class MainActivity extends AppCompatActivity {
     String lng = "0";
     boolean haveCoOrds = false;
     Socket socket = null;
+
+    DataOutputStream toFHBB;
+    DataOutputStream toServer;
+
+    InputStream fromServer;
+    InputStream fromFHBB;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
         public void onClick(View arg0) {
             try {
                 String portstr = editTextPort.getText().toString();
-                FHEengine fhe = new FHEengine(exepath, editTextAddress.getText().toString(),
+                FHEengine fhe = new FHEengine(editTextAddress.getText().toString(),
                         blocksize, Integer.parseInt(portstr));
                 fhe.start();
             } catch (Exception e) {
@@ -126,7 +133,8 @@ public class MainActivity extends AppCompatActivity {
 
         File newExe = new File(finalPath);
         try {
-            Process process = Runtime.getRuntime().exec("/system/bin/chmod 744 /data/user/0/sharktank.pinger/files/FHBB_x");
+            Process process = Runtime.getRuntime().exec("/system/bin/chmod 777 /data/user/0/sharktank.pinger/files/FHBB_x");
+            process.waitFor();
         } catch (Exception e) {
             Log.d(TAG, "Unable to change FHBB_x permissions", e);
         }
@@ -140,31 +148,31 @@ public class MainActivity extends AppCompatActivity {
         byte[] buffer;
         int portnum;
         String hostname;
-        String cmd;
 
-        DataOutputStream toFHBB;
-        DataOutputStream toServer;
-
-        InputStream fromServer;
-        InputStream fromFHBB;
-
-        FHEengine(String path, String host, int blocklen, int port) {
+        FHEengine(String host, int blocklen, int port) {
             blocksz = blocklen;
             buffer = new byte[blocksz+1];
             hostname = host;
-            cmd = path;
             portnum = port;
         }
 
         @Override
         public void run() {
+            Process fhbb = null;
             try {
-                Process fhbb = Runtime.getRuntime().exec(cmd);
-
+                fhbb = Runtime.getRuntime().exec(exepath);
+            } catch (IOException e) {
+                Log.d(TAG, "Could not execute FHBB");
+                e.printStackTrace();
+            }
+            try {
                 fromFHBB = fhbb.getInputStream(); //this is cout for FHBB_x
                 toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
+                fromFHBB.read(buffer);
+                String test = new String(purgeFilth(buffer), "utf-8");
+                Log.d(TAG, test);
             } catch (Exception e) {
-                Log.d(TAG, "Crash During Execution/Piping to FHBB", e);
+                Log.d(TAG, "Crash During piping to FHBB", e);
                 e.printStackTrace();
             }
             try {
@@ -264,21 +272,30 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private int readFromFHBB(byte[] buffer, int blocklen) throws Exception {
-            DataInputStream reader = new DataInputStream(fromFHBB);
+            //DataInputStream reader = new DataInputStream(fromFHBB);
             int i = fromFHBB.available();
             if (i==0) return 0;
             int rd;
             if (i < blocklen) {
-                reader.read(buffer, 0, i);
+                fromFHBB.read(buffer, 0, i);
                 rd = i;
             } else {
-                rd = reader.read(buffer, 0, blocklen);
+                rd = fromFHBB.read(buffer, 0, blocklen);
             }
             byte [] buf2 = purgeFilth(buffer);
             buffer = buf2;
             String str = new String(buf2, "utf-8");
             Log.d(TAG, "From FHBB: " + str);
             return rd;
+        }
+
+        private void pushToFHBB(byte[] buffer, int blocklen) throws Exception {
+            toFHBB.write(buffer, 0, blocklen);
+//            String output = new String(buffer, "utf-8");
+//            output += "\n\0";
+//            Log.d(TAG, "To FHBB: " + output);
+//            toFHBB.writeBytes(output);
+            toFHBB.flush();
         }
 
         private int readFromSocket(byte[] buffer, int blocklen) throws Exception {
@@ -295,15 +312,6 @@ public class MainActivity extends AppCompatActivity {
             byte [] buf2 = purgeFilth(buffer);
             buffer = buf2;
             return rd;
-        }
-
-        private void pushToFHBB(byte[] buffer, int blocklen) throws Exception {
-            toFHBB.write(buffer, 0, blocklen);
-//            String output = new String(buffer, "utf-8");
-//            output += "\n\0";
-//            Log.d(TAG, "To FHBB: " + output);
-//            toFHBB.writeBytes(output);
-            toFHBB.flush();
         }
 
         private void pushToSocket(byte[] buffer) throws Exception {
@@ -428,14 +436,14 @@ public class MainActivity extends AppCompatActivity {
         private byte [] purgeFilth(byte[] victim) throws Exception {
             int j = 0;
             while (((victim[j] < 32) || (victim[j] > 126)) && (j < (victim.length-1))) j++;
-            if (victim.length == j) {
+            if (victim.length-1 == j) {
                 byte [] out = new byte[1];
                 out[0] = '\0';
                 return out;
             }
             int i = j;
             while ((victim[i] > 31) && (victim[i] < 127) && (i < (victim.length-1))) i++;
-            if ((j==0) && (i==victim.length)) return victim;
+            if ((j==0) && (i==victim.length-1)) return victim;
             ByteArrayInputStream good = new ByteArrayInputStream(victim, j, i);
             byte[] out = new byte[i];
             good.read(out, 0, good.available());
