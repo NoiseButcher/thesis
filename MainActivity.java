@@ -1,5 +1,6 @@
 package sharktank.pinger;
 
+import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.content.res.AssetManager;
@@ -18,6 +19,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import java.io.OutputStream;
 import java.net.Socket;
 import java.lang.Process;
 
@@ -108,10 +110,19 @@ public class MainActivity extends AppCompatActivity {
         AssetManager assetManager = getAssets();
         InputStream in;
         FileOutputStream out;
-        String appFileDir = getFilesDir().getPath();
+//        String appFileDir = getFilesDir().getPath();
+        String appFileDir = Environment.getDataDirectory().getPath();
+        appFileDir += "/local/tmp";
         /*** data/user/0/sharktank.pinger/files/ ***/
         String finalPath = appFileDir + "/FHBB_x";
         Log.d(TAG, finalPath);
+        try {
+            String permissions = "/system/bin/chmod 777 " + appFileDir;
+            Process process = Runtime.getRuntime().exec(permissions);
+            process.waitFor();
+        } catch (Exception e) {
+            Log.d(TAG, "Unable to /data/local/ permissions", e);
+        }
         byte[] buf;
         try {
             in = assetManager.open(path);
@@ -132,12 +143,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         File newExe = new File(finalPath);
-        try {
-            Process process = Runtime.getRuntime().exec("/system/bin/chmod 777 /data/user/0/sharktank.pinger/files/FHBB_x");
-            process.waitFor();
-        } catch (Exception e) {
-            Log.d(TAG, "Unable to change FHBB_x permissions", e);
-        }
+//        try {
+//            String permissions = "/system/bin/chmod 777 " + finalPath;
+//            Process process = Runtime.getRuntime().exec(permissions);
+//            process.waitFor();
+//        } catch (Exception e) {
+//            Log.d(TAG, "Unable to change FHBB_x permissions", e);
+//        }
         newExe.setExecutable(true);
         return finalPath;
     }
@@ -159,7 +171,10 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             Process fhbb = null;
+//            String shell = "/system/bin/sh";
+//            String superExe = "." + exepath + "\n";
             try {
+//                fhbb = Runtime.getRuntime().exec(shell);
                 fhbb = Runtime.getRuntime().exec(exepath);
             } catch (IOException e) {
                 Log.d(TAG, "Could not execute FHBB");
@@ -168,6 +183,8 @@ public class MainActivity extends AppCompatActivity {
             try {
                 fromFHBB = fhbb.getInputStream(); //this is cout for FHBB_x
                 toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
+//                toFHBB.writeBytes(superExe);
+//                toFHBB.flush();
                 fromFHBB.read(buffer);
                 String test = new String(purgeFilth(buffer), "utf-8");
                 Log.d(TAG, test);
@@ -378,11 +395,7 @@ public class MainActivity extends AppCompatActivity {
             byte[] ack = new byte[blocksz+1];
             readFromSocket(ack, blocksz);
             String ref = new String(purgeFilth(ack), "utf-8");
-            if (ref.equals("ACK")) {
-                return true;
-            } else {
-                return false;
-            }
+            return ref.equals("ACK");
         }
 
         private boolean getFHBBACK() throws Exception {
@@ -390,11 +403,7 @@ public class MainActivity extends AppCompatActivity {
             readFromFHBB(ack, 4);
             String ref = new String(purgeFilth(ack), "utf-8");
             Log.d(TAG, "ACK == " + ref);
-            if (ref.equals("ACK")) {
-                return true;
-            } else {
-                return false;
-            }
+            return ref.equals("ACK");
         }
 
         private void sendServerACK() throws Exception {
