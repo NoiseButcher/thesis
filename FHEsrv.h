@@ -1,24 +1,15 @@
 #ifndef FHESRV_H
 #define FHESRV_H
 
-#include <unistd.h>
-#include <NTL/lzz_pXFactoring.h>
-#include <NTL/matrix.h>
-#include "FHE.h"
-#include "EncryptedArray.h"
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
+#include "FHinc.h"
+#include <netdb.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <stdio.h>
-#include <netdb.h>
-#include <math.h>
-#include <sstream>
-#include <fstream>
-#include <iostream>
-#include <exception>
+#include "EncryptedArray.h"
+#include <NTL/lzz_pXFactoring.h>
+#include <NTL/matrix.h>
+
 /**DATA STRUCTURES**/
 /*******************************************************************
 *Class for storing client specific information, the amount of these
@@ -50,6 +41,7 @@ struct ServerData {
     FHEcontext *context;
 	vector<Cluster> cluster;
 	vector<pthread_t> threadID;
+	vector<int> clients;
     int users;
 	int maxthreads;
 	pthread_mutex_t mutex;
@@ -106,4 +98,7 @@ void stream_to_socket(istream &stream, char ** buffer,
                       ClientLink * sl, int blocksize);
 void socket_to_stream(ostream &stream, char ** buffer,
                       ClientLink * sl, int blocksize);
+
+void close_client_thread(ClientLink * sl);
+int free_slot(vector<int> input);
 #endif

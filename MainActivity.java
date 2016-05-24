@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -19,6 +20,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.lang.Process;
@@ -110,19 +112,9 @@ public class MainActivity extends AppCompatActivity {
         AssetManager assetManager = getAssets();
         InputStream in;
         FileOutputStream out;
-//        String appFileDir = getFilesDir().getPath();
-        String appFileDir = Environment.getDataDirectory().getPath();
-        appFileDir += "/local/tmp";
-        /*** data/user/0/sharktank.pinger/files/ ***/
-        String finalPath = appFileDir + "/FHBB_x";
+        String appFileDir = getFilesDir().getPath();
+        String finalPath = appFileDir.concat("/FHBB_x");
         Log.d(TAG, finalPath);
-        try {
-            String permissions = "/system/bin/chmod 777 " + appFileDir;
-            Process process = Runtime.getRuntime().exec(permissions);
-            process.waitFor();
-        } catch (Exception e) {
-            Log.d(TAG, "Unable to /data/local/ permissions", e);
-        }
         byte[] buf;
         try {
             in = assetManager.open(path);
@@ -142,15 +134,14 @@ public class MainActivity extends AppCompatActivity {
             textResponse.setText("Unable to make FHBB_x executable");
         }
 
-        File newExe = new File(finalPath);
-//        try {
-//            String permissions = "/system/bin/chmod 777 " + finalPath;
-//            Process process = Runtime.getRuntime().exec(permissions);
-//            process.waitFor();
-//        } catch (Exception e) {
-//            Log.d(TAG, "Unable to change FHBB_x permissions", e);
-//        }
-        newExe.setExecutable(true);
+        try {
+            String permissions = "/system/bin/chmod 777 " + finalPath;
+            Process process = Runtime.getRuntime().exec(permissions);
+            process.waitFor();
+        } catch (Exception e) {
+            Log.d(TAG, "Unable to change FHBB_x permissions", e);
+        }
+
         return finalPath;
     }
 
@@ -171,10 +162,24 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             Process fhbb = null;
-//            String shell = "/system/bin/sh";
-//            String superExe = "." + exepath + "\n";
+
             try {
-//                fhbb = Runtime.getRuntime().exec(shell);
+                String permcheck = "/system/bin/ls -l " + exepath;
+                Process process = Runtime.getRuntime().exec(permcheck);
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                String output = "";
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.concat(line + "\n");
+                    Log.w(TAG, "Shell Says:" + line);
+                }
+                reader.close();
+                process.waitFor();
+            } catch (Exception e) {
+                Log.d(TAG, "Unable to check FHBB_x permissions", e);
+            };
+
+            try {
                 fhbb = Runtime.getRuntime().exec(exepath);
             } catch (IOException e) {
                 Log.d(TAG, "Could not execute FHBB");
@@ -183,8 +188,6 @@ public class MainActivity extends AppCompatActivity {
             try {
                 fromFHBB = fhbb.getInputStream(); //this is cout for FHBB_x
                 toFHBB = new DataOutputStream(fhbb.getOutputStream()); //this is cin for FHBB_x
-//                toFHBB.writeBytes(superExe);
-//                toFHBB.flush();
                 fromFHBB.read(buffer);
                 String test = new String(purgeFilth(buffer), "utf-8");
                 Log.d(TAG, test);
@@ -200,14 +203,14 @@ public class MainActivity extends AppCompatActivity {
                 getDist(buffer, blocksz);
                 printDist(buffer, blocksz);
 
-                while (true) {
-                    getCoords(buffer, blocksz);
+                while (getCoords(buffer, blocksz) != 0) {
                     getFHBBACK();
                     sendServerACK();
                     sendLoc(buffer, blocksz);
                     getDist(buffer, blocksz);
                     printDist(buffer, blocksz);
                 }
+                fhbb.waitFor();
 
             } catch (Exception e) {
                 Log.d(TAG, "Crash During Normal Operation", e);
@@ -238,7 +241,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        private void getCoords(byte[] buf, int blocklen) {
+        private int getCoords(byte[] buf, int blocklen) {
             StringBuffer stream = new StringBuffer("");
             try {
                 while (haveCoOrds == false) {}
@@ -246,14 +249,20 @@ public class MainActivity extends AppCompatActivity {
                 localToFHBB(buf, blocklen, stream);
                 stream.delete(0, stream.length());
 
+                if (lng.equals("quit")) return 0;
+
                 stream.append(lat);
                 localToFHBB(buf, blocklen, stream);
                 stream.delete(0, stream.length());
+
+                if (lat.equals("quit")) return 0;
+
                 haveCoOrds = false;
 
             } catch (Exception e) {
                 Log.d(TAG, "Crash During GPS Extraction", e);
             }
+            return 1;
         }
 
         private void sendLoc(byte[] buffer, int blocklen) {
@@ -289,7 +298,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private int readFromFHBB(byte[] buffer, int blocklen) throws Exception {
-            //DataInputStream reader = new DataInputStream(fromFHBB);
             int i = fromFHBB.available();
             if (i==0) return 0;
             int rd;

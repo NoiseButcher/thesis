@@ -1,6 +1,5 @@
 #include "BBHandler.h"
 
-#define BUFFSIZE    4096
 /***********************************
 Testing rig for the black box binary. Interfaces with sockets to
 the server and a terminal with the user to simulate the communication
@@ -34,7 +33,7 @@ int main(int argc, char * argv[])
             (close(bb_in[0]) != 0) ||
             (close(bb_in[1]) != 0))
         {
-            cerr << "FHBB standard input pipe failure." << endl;
+            cerr << "Handler: FHBB standard input pipe failure." << endl;
             exit(0);
         }
         close(1);
@@ -42,12 +41,12 @@ int main(int argc, char * argv[])
             (close(bb_out[0]) != 0) ||
             (close(bb_out[1]) != 0))
         {
-            cerr << "FHBB standard output pipe failure." << endl;
+            cerr << "Handler: FHBB standard output pipe failure." << endl;
             exit(0);
         }
         // --->/home/sharky/Thesis/Guy_Code/FHBB_x <--- e.g my path
         execl(argv[3], "FHBB_x", NULL);
-        cerr << "FHBB execution failure." << endl;
+        cerr << "Handler: FHBB execution failure." << endl;
         delete [] buffer;
         return 1;
     }
@@ -80,7 +79,7 @@ int main(int argc, char * argv[])
                             stream);
             if (!recv_ack_pipe(bb_out[0]))
             {
-                cerr << "Main loop ACK not received from FHBB";
+                cerr << "Handler: Main loop, ACK not received from FHBB";
                 cerr << endl;
                 delete [] buffer;
                 kill(blackbox, SIGKILL);
@@ -187,7 +186,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
         send_ack_pipe(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "ACK error: handshake" << endl;
+            cerr << "Handler: ACK error: handshake" << endl;
             exit(4);
         }
         send_ack_socket(sl);
@@ -202,7 +201,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 
     if (i == 0)
     {
-        cerr << "Server crash, HElib error probably" << endl;
+        cerr << "Handler: Server crash; HElib error probably" << endl;
         delete [] buffer;
         exit(3);
     }
@@ -211,7 +210,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 
     if (!recv_ack_socket(sl))
     {
-        cerr << "ACK error: get_client_position()" << endl;
+        cerr << "Handler: ACK error: get_client_position()" << endl;
         exit(1);
     }
     send_ack_pipe(infd);
@@ -240,12 +239,12 @@ int prepare_socket(ServerLink * sl, char * argv[])
     sl->port = atoi(argv[1]);
     if ((sl->sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
-        cerr << "Socket Error: socket()" << endl;
+        cerr << "Handler: Socket Error: socket()" << endl;
 		return 2;
     }
     if((sl->serv=gethostbyname(argv[2]))==NULL)
     {
-        cerr << "Socket error: gethostbyname()" << endl;
+        cerr << "Handler: Socket error: gethostbyname()" << endl;
 		return 2;
     }
     memset((char*)&sl->servAddr, 0, sizeof(sl->servAddr));
@@ -258,7 +257,7 @@ int prepare_socket(ServerLink * sl, char * argv[])
                             (struct sockaddr *)&sl->servAddr,
                             sizeof(sl->servAddr))) < 0)
      {
-        cerr << "Socket Error: connect()" << endl;
+        cerr << "Handler: Socket Error: connect()" << endl;
 		return 2;
      }
      return 1;
@@ -308,7 +307,8 @@ void handler_to_socket(istream &stream, char ** buffer,
         write_to_socket(buffer, k, sl);
         if (!recv_ack_socket(sl))
         {
-            cerr << "ACK error: handler to socket()" << endl;
+            cerr << "Handler: ACK error, handler to socket()" << endl;
+            delete [] buffer;
             exit(4);
         }
     }
@@ -374,9 +374,10 @@ void pipe_to_socket(int infd, int outfd, char ** buffer,
         write_to_socket(buffer, x, sl);
         if (!recv_ack_socket(sl))
         {
-            cerr << "ACK error, pipe_to_socket()" << endl;
+            cerr << "Handler: ACK error, pipe_to_socket()" << endl;
             close(infd);
             close(outfd);
+            delete [] buffer;
             exit(4);
         }
         send_ack_pipe(infd);
@@ -399,10 +400,10 @@ void socket_to_pipe(int infd, int outfd, char ** buffer,
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "ACK error: socket_to_pipe()" << endl;
+            cerr << "Handler: ACK error, socket_to_pipe()" << endl;
             close(infd);
             close(outfd);
-            delete [] *buffer;
+            delete [] buffer;
             exit(0);
         }
         send_ack_socket(sl);
@@ -430,10 +431,10 @@ void handler_to_pipe(istream &stream, int infd, int outfd,
         terminate_pipe_msg(infd);
         if (!recv_ack_pipe(outfd))
         {
-            cerr << "ACK error: handler_to_pipe()" << endl;
+            cerr << "Handler: ACK error, handler_to_pipe()" << endl;
             close(infd);
             close(outfd);
-            delete [] *buffer;
+            delete [] buffer;
             exit(0);
         }
         bzero(*buffer, sizeof(*buffer));

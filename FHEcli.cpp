@@ -1,9 +1,5 @@
 #include "FHEcli.h"
-#include <sys/resource.h>
 
-#define BUFFSIZE    4096
-//#define MEMTEST
-//#define TRANSFER
 /***********************************
 Client side program to be handled as
 a stand alone executable.
@@ -78,14 +74,13 @@ int main(int argc, char * argv[])
     fs.close();
 #endif // MEMTEST
 
-    cout << "Enter co-ordinates:" << endl;
+
     pair <int, int> loc = get_gps();
     send_location_socket(&me, &op, loc.first, loc.second, &buffer);
     them = get_distances_socket(&op, &me, &buffer);
     display_positions(them);
     while (true)
     {
-        cout << "Enter co-ordinates:" << endl;
         loc = get_gps();
         send_ack(&op);
         send_location_socket(&me, &op, loc.first,
@@ -108,9 +103,10 @@ pair<int, int> get_gps()
 {
 	int lat, lng;
 	string input;
-	cout << "X:";
+	cout << "Enter co-ordinates:" << endl;
+	cout << "X: ";
 	cin >> lat;
-	cout << "Y:";
+	cout << "Y: ";
 	cin >> lng;
 	return make_pair(lat, lng);
 }

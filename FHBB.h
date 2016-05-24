@@ -1,21 +1,10 @@
 #ifndef FHBB_H
 #define FHBB_H
 
-#include <unistd.h>
+#include "FHinc.h"
 #include <NTL/lzz_pXFactoring.h>
 #include <NTL/matrix.h>
-#include "FHE.h"
 #include "EncryptedArray.h"
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <stdio.h>
-#include <math.h>
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <exception>
-#include <sys/resource.h>
 
 struct UserPackage
 {

@@ -1,11 +1,5 @@
 #include "FHEsrv.h"
-#include <sys/resource.h>
 
-#define BUFFSIZE    4096
-//#define TIMING
-//#define MEMTEST
-//#define TRANSFER
-//#define THREADSYNC
 /**********************************************
  *Server program for operating on encrypted data.
  *Generates the basis for the security scheme
@@ -104,10 +98,11 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "HElib Exception; terminating this thread." << endl;
         delete [] buffer;
-        exit(3);
+        close_client_thread(sl);
     }
+
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
 
     cout << "Context Stream Complete " << endl;
@@ -122,11 +117,17 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "HElib Exception; terminating this thread." << endl;
         delete [] buffer;
-        exit(3);
+        close_client_thread(sl);
     }
-    sd->cluster.push_back(cx);
+    if (sl->thisClient < (sd->users-1))
+    {
+        sd->cluster.insert(sd->cluster.begin()+sl->thisClient, cx);
+    } else {
+        sd->cluster.push_back(cx);
+    }
+
 
     stream.str("");
     stream.clear();
@@ -148,7 +149,13 @@ void *handle_client(void *param)
     fd_set incoming;
     fd_set master;
     pthread_mutex_lock(&me.server->mutex);
-    me.thisClient = me.server->users;
+//    me.thisClient = me.server->users;
+    me.thisClient=free_slot(me.server->clients);
+    if (me.thisClient == me.server->users) {
+        me.server->clients.push_back(1);
+    } else {
+        me.server->clients[me.thisClient] = 1;
+    }
     me.server->users++;
     cout << "New client " << me.thisClient << " accepted on ";
     cout << me.sockFD << "." << endl;
@@ -267,6 +274,7 @@ void *handle_client(void *param)
         }
     }
     delete [] buffer;
+    close_client_thread(&me);
 }
 
 /*******************************
@@ -279,7 +287,12 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
 {
     stringstream stream;
     bzero(*buffer, sizeof(*buffer));
-    int k;
+    int k, j;
+    j = 0;
+    for (k = 0; k < id; k++) {
+        if (sd->clients[k] == 0) j++;
+    }
+    id -= j;
     if (sd->cluster[id].thisLoc.size() > 0)
     {
         sd->cluster[id].thisLoc.erase(sd->cluster[id].thisLoc.begin(),
@@ -292,6 +305,7 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
     fs.open("cluster.mem", fstream::out | fstream::app);
     fs << "Number of Clients = " << sd->users << endl;
 #endif // MEMTEST
+
     for (k = 0; k < sd->users; k++)
     {
         sock_handshake(sl);
@@ -302,9 +316,9 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         }
         catch (...)
         {
-            cerr << "HElib Exception" << endl;
+            cerr << "HElib Exception; terminating this thread." << endl;
             delete [] buffer;
-            exit(3);
+            close_client_thread(sl);
         }
 #ifdef MEMTEST
         stream.seekg(0, ios::end);
@@ -323,9 +337,9 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         }
         catch (...)
         {
-            cerr << "HElib Exception" << endl;
+            cerr << "HElib Exception; terminating this thread." << endl;
             delete [] buffer;
-            exit(3);
+            close_client_thread(sl);
         }
 
 #ifdef MEMTEST
@@ -360,7 +374,12 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
 {
     stringstream stream;
     bzero(*buffer, sizeof(*buffer));
-    int k;
+    int k, j;
+    j = 0;
+    for (k = 0; k < id; k++) {
+        if (sd->clients[k] == 0) j++;
+    }
+    id -= j;
     if (sd->cluster[id].theirLocs.size() > 0)
     {
         sd->cluster[id].theirLocs.erase(sd->cluster[id].theirLocs.begin(),
@@ -400,9 +419,9 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "HElib Exception; terminating this thread." << endl;
         delete [] buffer;
-        exit(3);
+        close_client_thread(sl);
     }
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
@@ -768,8 +787,9 @@ void stream_to_socket(istream &stream, char ** buffer,
 
         if (!recv_ack(sl))
         {
-            cerr << "ACK error: socket data block" << endl;
-            exit(4);
+            cerr << "ACK error: socket data block; terminating this thread." << endl;
+//            pthread_join(sl->id, NULL);
+            close_client_thread(sl);
         }
     }
     while (k == blocksize);
@@ -816,4 +836,23 @@ void socket_to_stream(ostream &stream, char ** buffer,
         cout << totalloops << " : " << rx;
         cout << " : " << stream.tellp() << endl;
 #endif // TRANSFER
+}
+
+void close_client_thread(ClientLink * sl) {
+    sl->server->cluster.erase(sl->server->cluster.begin()+(sl->thisClient));
+    sl->server->threadID.erase(sl->server->threadID.begin()+(sl->thisClient));
+    sl->server->clients[sl->thisClient]=0;
+    sl->server->users--;
+    pthread_join(sl->id, NULL);
+}
+
+int free_slot(vector<int> input) {
+    if (input.size()==0) {
+        return 0;
+    }
+    int i;
+    for (i=0; i<input.size(); i++) {
+        if (input[i]==0) return i;
+    }
+    return i;
 }

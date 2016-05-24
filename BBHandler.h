@@ -1,20 +1,11 @@
 #ifndef BBHANDLER_H
 #define BBHANDLER_H
 
-#include "FHE.h"
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
+#include "FHinc.h"
+#include <netdb.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <stdio.h>
-#include <netdb.h>
-#include <math.h>
-#include <fstream>
-#include <sstream>
-#include <sys/resource.h>
 #include <signal.h>
 
 /**********

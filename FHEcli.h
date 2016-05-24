@@ -1,24 +1,14 @@
 #ifndef FHECLI_H
 #define FHECLI_H
 
-#include <unistd.h>
+#include "FHinc.h"
 #include <NTL/lzz_pXFactoring.h>
 #include <NTL/matrix.h>
-#include "FHE.h"
 #include "EncryptedArray.h"
-#include <stdlib.h>
-#include <argp.h>
-#include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <stdio.h>
 #include <netdb.h>
-#include <math.h>
-#include <fstream>
-#include <sstream>
-#include <iostream>
 
 struct UserPackage
 {

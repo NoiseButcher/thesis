@@ -1,6 +1,5 @@
 #include "FHBB.h"
 
-#define BUFFSIZE    4096
 /***********************************
  *Client side black box program designed for mobile
  *systems. Operates as an I/O function box that pipes
@@ -22,7 +21,7 @@ int main(int argc, char * argv[])
         return 0;
     }
 
-    cout << "SPAWN MORE OVERLORDS" << endl;
+    //cout << "SPAWN MORE OVERLORDS" << endl;
     install_upkg_android(&me, &buffer);
     pair <int, int> loc = get_gps(&buffer);
     send_location_android(&me, loc.first, loc.second, &buffer);
@@ -126,7 +125,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "FHBB: HElib Exception, install_upkg()" << endl;
         delete [] buffer;
         exit(3);
     }
@@ -143,7 +142,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "FHBB: HElib Exception, install_upkg()" << endl;
         delete [] buffer;
         exit(3);
     }
@@ -163,7 +162,7 @@ void install_upkg_android(UserPackage * upk, char ** buffer)
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "FHBB: HElib Exception, install_upkg()" << endl;
         delete [] buffer;
         exit(3);
     }
@@ -191,18 +190,13 @@ void send_location_android(UserPackage * upk, int x, int y,
 
         FHEPubKey * pk = new FHEPubKey(*upk->context);
         pipe_in(stream, buffer, BUFFSIZE);
-        /*
-        stream.seekg(0, ios::end);
-        cerr << "Public Key at client: " << stream.tellg() << endl;
-        stream.seekg(0, ios::beg);
-        */
         try
         {
             stream >> *pk;
         }
         catch (...)
         {
-            cerr << "HElib Exception" << endl;
+            cerr << "FHBB: HElib Exception, send_location()" << endl;
             delete pk;
             delete [] buffer;
             exit(3);
@@ -218,7 +212,7 @@ void send_location_android(UserPackage * upk, int x, int y,
         }
         catch (...)
         {
-            cerr << "HElib Exception" << endl;
+            cerr << "FHBB: HElib Exception, send_location()" << endl;
             delete pk;
             delete [] buffer;
             exit(3);
@@ -233,15 +227,13 @@ void send_location_android(UserPackage * upk, int x, int y,
     /*Catch if the first client has crashed, exit*/
     if (i == 0)
     {
-        cerr << "Server crash, probably HElib error" << endl;
-        delete [] buffer;
+        cerr << "FHBB: Server Crash, send_location()" << endl;
         exit(3);
     }
     /*Receive an ACK from the server confirming all data received*/
     if (!recv_ack_android())
     {
-        cerr << "Server Abort" << endl;
-        delete [] buffer;
+        cerr << "FHBB: ACK Error, send_location()" << endl;
         exit(1);
     }
 }
@@ -264,7 +256,7 @@ vector<long> get_distances_android(UserPackage * upk, char ** buffer)
     }
     catch (...)
     {
-        cerr << "HElib Exception" << endl;
+        cerr << "FHBB: HElib Exception, get_distances()" << endl;
         delete [] buffer;
         exit(3);
     }
@@ -349,7 +341,8 @@ void pipe_out(istream &stream, char** buffer, int blocksize)
         cout.flush();
         if (!recv_ack_android())
         {
-            cerr << "ACK error: pipe out()" << endl;
+            cerr << "FHBB: ACK error, pipe out()" << endl;
+            delete [] buffer;
             exit(4);
         }
         bzero(*buffer, sizeof(*buffer));
