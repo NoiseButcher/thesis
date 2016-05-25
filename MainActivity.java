@@ -114,7 +114,6 @@ public class MainActivity extends AppCompatActivity {
         FileOutputStream out;
         String appFileDir = getFilesDir().getPath();
         String finalPath = appFileDir.concat("/FHBB_x");
-        Log.d(TAG, finalPath);
         byte[] buf;
         try {
             in = assetManager.open(path);
@@ -142,6 +141,8 @@ public class MainActivity extends AppCompatActivity {
             Log.d(TAG, "Unable to change FHBB_x permissions", e);
         }
 
+//        File execFile = new File(finalPath);
+//        execFile.setExecutable(true);
         return finalPath;
     }
 
@@ -162,7 +163,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             Process fhbb = null;
-
+/* SYSTEM CALL TO CHECK PERMISSIONS FOR FHBB_X, DELETE THIS IF IT WORKS...
             try {
                 String permcheck = "/system/bin/ls -l " + exepath;
                 Process process = Runtime.getRuntime().exec(permcheck);
@@ -171,14 +172,14 @@ public class MainActivity extends AppCompatActivity {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     output.concat(line + "\n");
-                    Log.w(TAG, "Shell Says:" + line);
+                    Log.w(TAG, "Checking app file permissions:" + line);
                 }
                 reader.close();
                 process.waitFor();
             } catch (Exception e) {
                 Log.d(TAG, "Unable to check FHBB_x permissions", e);
             };
-
+*/
             try {
                 fhbb = Runtime.getRuntime().exec(exepath);
             } catch (IOException e) {
