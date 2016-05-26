@@ -121,6 +121,7 @@ int main(int argc, char * argv[])
 void get_gps_handler(int infd, int outfd, char ** buffer,
                        int blocksize, stringstream &stream)
 {
+    size_t quit;
     string input;
     cout << "Enter a position:" << endl;
     cout << "X: ";
@@ -129,12 +130,28 @@ void get_gps_handler(int infd, int outfd, char ** buffer,
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
     stream.clear();
+    quit = input.find_first_of("Qq");
+	if (quit != input.npos)
+    {
+        delete [] buffer;
+        close(infd);
+        close(outfd);
+        exit(5);
+	}
     cout << "Y: ";
     cin >> input;       //Get integer latitude
     stream << input;
     handler_to_pipe(stream, infd, outfd, buffer, blocksize);
     stream.str("");
     stream.clear();
+    quit = input.find_first_of("Qq");
+	if (quit != input.npos)
+    {
+        delete [] buffer;
+        close(infd);
+        close(outfd);
+        exit(5);
+	}
 }
 
 /*********************
@@ -180,7 +197,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
     int i = 0;
-    cerr << "Getting location data" << endl;
+    cerr << "Uploading location data from FHBB..." << endl;
     while (recv_ack_socket(sl))
     {
         send_ack_pipe(infd);
@@ -206,8 +223,6 @@ void send_location_handler(int infd, int outfd, char ** buffer,
         exit(3);
     }
 
-    cerr << i << " locations sent to server." << endl;
-
     if (!recv_ack_socket(sl))
     {
         cerr << "Handler: ACK error: get_client_position()" << endl;
@@ -223,7 +238,7 @@ void send_location_handler(int infd, int outfd, char ** buffer,
 void get_distance_handler(int infd, int outfd, char ** buffer,
                           ServerLink * sl, int blocksize)
 {
-    cerr << "Downloading distances." << endl;
+    cerr << "Downloading distances..." << endl;
     socket_to_pipe(infd, outfd, buffer, sl, blocksize);
     cerr << "Done." << endl;
 }

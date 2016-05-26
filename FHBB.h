@@ -38,6 +38,7 @@ vector<long> get_distances_android(UserPackage * upk, char ** buffer);
 
 bool recv_ack_android();
 void send_ack_android();
+void send_nok_android();
 void purge_nulls();
 
 void pipe_out(istream &stream, char** buffer, int blocksize);

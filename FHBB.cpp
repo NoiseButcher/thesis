@@ -21,7 +21,6 @@ int main(int argc, char * argv[])
         return 0;
     }
 
-    //cout << "SPAWN MORE OVERLORDS" << endl;
     install_upkg_android(&me, &buffer);
     pair <int, int> loc = get_gps(&buffer);
     send_location_android(&me, loc.first, loc.second, &buffer);
@@ -50,17 +49,30 @@ int main(int argc, char * argv[])
 pair<int, int> get_gps(char ** buffer)
 {
 	int lat, lng;
+	size_t quit;
     stringstream input;
 	bzero(*buffer, sizeof(*buffer));
 	input.str("");
 	input.clear();
     pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
+    quit = input.str().find_first_of("Qq");
+	if (quit != input.str().npos)
+    {
+        //delete [] buffer;
+        exit(5);
+    }
 	input >> lat;
     input.str("");
 	input.clear();
     pipe_in(input, buffer, BUFFSIZE);
     sleep(0.1);
+    quit = input.str().find_first_of("Qq");
+	if (quit != input.str().npos)
+    {
+        //delete [] buffer;
+        exit(5);
+    }
 	input >> lng;
     input.str("");
 	input.clear();
@@ -73,10 +85,11 @@ pair<int, int> get_gps(char ** buffer)
 ***************/
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 {
+    uint32_t i;
 	vector<long> loc;
 	loc.push_back((long)x);
 	loc.push_back((long)y);
-	for (int i = 2; i < pk.getContext().ea->size(); i++)
+	for (i = 2; i < pk.getContext().ea->size(); i++)
     {
 		loc.push_back(0);
 	}
@@ -302,6 +315,13 @@ void send_ack_android()
 {
     cin.sync();
     cout << "ACK";
+    cout.flush();
+}
+
+void send_nok_android()
+{
+    cin.sync();
+    cout << "NOK";
     cout.flush();
 }
 
