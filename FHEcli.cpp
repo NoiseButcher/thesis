@@ -74,20 +74,22 @@ int main(int argc, char * argv[])
     fs.close();
 #endif // MEMTEST
 
-
-    pair <int, int> loc = get_gps();
+    pair <int, int> loc;
+    get_gps(&loc);
     send_location_socket(&me, &op, loc.first, loc.second, &buffer);
     them = get_distances_socket(&op, &me, &buffer);
     display_positions(them);
-    while (true)
+
+    while (get_gps(&loc))
     {
-        loc = get_gps();
         send_ack(&op);
         send_location_socket(&me, &op, loc.first,
                              loc.second, &buffer);
         them = get_distances_socket(&op, &me, &buffer);
         display_positions(them);
     }
+    send_nak(&op);
+    close(op.sockFD);
     return 0;
 }
 
@@ -99,16 +101,27 @@ int main(int argc, char * argv[])
  *by 1000.
  *As it is an integer there is no decimal precision.
  **************************/
-pair<int, int> get_gps()
+bool get_gps(pair<int, int> * loc)
 {
 	int lat, lng;
+	size_t quit;
 	string input;
 	cout << "Enter co-ordinates:" << endl;
 	cout << "X: ";
-	cin >> lat;
+	cin >> input;
+	quit = input.find_first_of("Qq");
+	if (quit != input.npos) return false;
+	lat = atoi(&input[0]);
+	input = "";
+
 	cout << "Y: ";
-	cin >> lng;
-	return make_pair(lat, lng);
+    cin >> input;
+	quit = input.find_first_of("Qq");
+	if (quit != input.npos) return false;
+	lng = atoi(&input[0]);
+
+	*loc = make_pair(lat, lng);
+	return true;
 }
 
 /*************
@@ -117,10 +130,11 @@ pair<int, int> get_gps()
 ***************/
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk)
 {
+    uint32_t i;
 	vector<long> loc;
 	loc.push_back((long)x);
 	loc.push_back((long)y);
-	for (int i = 2; i < pk.getContext().ea->size(); i++)
+	for (i = 2; i < pk.getContext().ea->size(); i++)
     {
 		loc.push_back(0);
 	}
@@ -246,7 +260,7 @@ void send_location_socket(UserPackage * upk, ServerLink * sl, int x,
     stringstream stream;
     bzero(*buffer, sizeof(*buffer));
     int k = 0;
-    cout << "Sending my encrypted position." << endl;
+    cout << "Uploading my encrypted position." << endl;
     while (sock_handshake(sl))
     {
         FHEPubKey * pk = new FHEPubKey(*upk->context);
@@ -263,7 +277,6 @@ void send_location_socket(UserPackage * upk, ServerLink * sl, int x,
         delete pk;
         k++;
     }
-    cout << k << " positions transferred." << endl;
     recv_ack(sl);
 }
 
@@ -334,6 +347,24 @@ bool send_ack(ServerLink * sl)
     bzero(buffer, sizeof(buffer));
     buffer[0] = 'A';
     buffer[1] = 'C';
+    buffer[2] = 'K';
+    buffer[3] = '\0';
+    if (write_to_socket(&buffer,
+                        sizeof(buffer), sl) == sizeof(buffer))
+    {
+        delete [] buffer;
+        return true;
+    }
+    delete [] buffer;
+    return false;
+}
+
+bool send_nak(ServerLink * sl)
+{
+    char * buffer = new char[4];
+    bzero(buffer, sizeof(buffer));
+    buffer[0] = 'N';
+    buffer[1] = 'A';
     buffer[2] = 'K';
     buffer[3] = '\0';
     if (write_to_socket(&buffer,

@@ -42,7 +42,7 @@ struct ServerLink
 /**
 ALL MODE FUNCTIONS
 **/
-pair<int, int> get_gps();
+bool get_gps(pair<int, int> * loc);
 Ctxt encrypt_location(int x, int y, FHEPubKey &pk);
 void display_positions(vector<long> d);
 
@@ -53,6 +53,7 @@ int prepare_socket(ServerLink * sl, char * argv[]);
 int stream_from_socket(char ** buffer, int blocksize, ServerLink * sl);
 int write_to_socket(char ** buffer, int blocksize, ServerLink * sl);
 bool send_ack(ServerLink * sl);
+bool send_nak(ServerLink * sl);
 bool recv_ack(ServerLink * sl);
 bool sock_handshake(ServerLink * sl);
 void send_location_socket(UserPackage * upk, ServerLink * sl, int x,

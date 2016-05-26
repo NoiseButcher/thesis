@@ -99,6 +99,6 @@ void stream_to_socket(istream &stream, char ** buffer,
 void socket_to_stream(ostream &stream, char ** buffer,
                       ClientLink * sl, int blocksize);
 
-void close_client_thread(ClientLink * sl);
+void close_client_thread(ClientLink * sl, ServerData * server);
 int free_slot(vector<int> input);
 #endif

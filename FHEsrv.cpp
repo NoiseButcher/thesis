@@ -100,7 +100,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     {
         cerr << "HElib Exception; terminating this thread." << endl;
         delete [] buffer;
-        close_client_thread(sl);
+        close_client_thread(sl, sl->server);
     }
 
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
@@ -119,7 +119,7 @@ void generate_upkg(ServerData * sd, ClientLink * sl, char ** buffer)
     {
         cerr << "HElib Exception; terminating this thread." << endl;
         delete [] buffer;
-        close_client_thread(sl);
+        close_client_thread(sl, sl->server);
     }
     if (sl->thisClient < (sd->users-1))
     {
@@ -149,7 +149,6 @@ void *handle_client(void *param)
     fd_set incoming;
     fd_set master;
     pthread_mutex_lock(&me.server->mutex);
-//    me.thisClient = me.server->users;
     me.thisClient=free_slot(me.server->clients);
     if (me.thisClient == me.server->users) {
         me.server->clients.push_back(1);
@@ -192,80 +191,92 @@ void *handle_client(void *param)
         FD_SET(me.sockFD, &master);
         incoming = master;
         select(me.sockFD + 1, &incoming, NULL, NULL, &timeout);
+
         if (me.server->cluster[me.thisClient].thisLoc.size() !=
             me.server->users)
         {
-            recv_ack(&me);
-
+            if (recv_ack(&me))
+            {
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " requesting mutex: update." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " requesting mutex: update." << endl;
 #endif
 
-            pthread_mutex_lock(&me.server->mutex);
+                pthread_mutex_lock(&me.server->mutex);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " has the mutex for updating their location." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " has the mutex for updating their location." << endl;
 #endif
 
-            get_client_position(me.server, &me, me.thisClient, &buffer);
-            pthread_mutex_unlock(&me.server->mutex);
+                get_client_position(me.server, &me, me.thisClient, &buffer);
+                pthread_mutex_unlock(&me.server->mutex);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " surrendering mutex:update." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " surrendering mutex:update." << endl;
 #endif
 
-            pthread_barrier_wait(&me.server->popcap);
-            pthread_barrier_wait(&me.server->popcap);
+                pthread_barrier_wait(&me.server->popcap);
+                pthread_barrier_wait(&me.server->popcap);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " requesting mutex:update" << endl;
+                cout << "Client " << me.thisClient;
+                cout << " requesting mutex:update" << endl;
 #endif
 
-            pthread_mutex_lock(&me.server->mutex);
+                pthread_mutex_lock(&me.server->mutex);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " has the mutex for updating distances." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " has the mutex for updating distances." << endl;
 #endif
 
-            calculate_distances(me.server, &me, me.thisClient, &buffer);
-            pthread_mutex_unlock(&me.server->mutex);
+                calculate_distances(me.server, &me, me.thisClient, &buffer);
+                pthread_mutex_unlock(&me.server->mutex);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " surrendering mutex:update" << endl;
+                cout << "Client " << me.thisClient;
+                cout << " surrendering mutex:update" << endl;
 #endif
-
+            }
+            else
+            {
+                delete [] buffer;
+                close_client_thread(&me, me.server);
+            }
         }
+
         if (FD_ISSET(me.sockFD, &incoming))
         {
-            recv_ack(&me);
-
+            if (recv_ack(&me))
+            {
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " requesting mutex." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " requesting mutex." << endl;
 #endif
 
-            pthread_mutex_lock(&me.server->mutex);
+                pthread_mutex_lock(&me.server->mutex);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " has the mutex for uploading their new position." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " has the mutex for uploading their new position." << endl;
 #endif
 
-            get_client_position(me.server, &me, me.thisClient, &buffer);
-            calculate_distances(me.server, &me, me.thisClient, &buffer);
-            pthread_mutex_unlock(&me.server->mutex);
+                get_client_position(me.server, &me, me.thisClient, &buffer);
+                calculate_distances(me.server, &me, me.thisClient, &buffer);
+                pthread_mutex_unlock(&me.server->mutex);
 
 #ifdef THREADSYNC
-            cout << "Client " << me.thisClient;
-            cout << " surrendering mutex." << endl;
+                cout << "Client " << me.thisClient;
+                cout << " surrendering mutex." << endl;
 #endif
-
+            }
+            else
+            {
+                delete [] buffer;
+                close_client_thread(&me, me.server);
+            }
         }
         else
         {
@@ -273,8 +284,6 @@ void *handle_client(void *param)
             cout << " waiting for user input.." << endl;
         }
     }
-    delete [] buffer;
-    close_client_thread(&me);
 }
 
 /*******************************
@@ -318,7 +327,7 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         {
             cerr << "HElib Exception; terminating this thread." << endl;
             delete [] buffer;
-            close_client_thread(sl);
+            close_client_thread(sl, sl->server);
         }
 #ifdef MEMTEST
         stream.seekg(0, ios::end);
@@ -339,7 +348,7 @@ void get_client_position(ServerData * sd, ClientLink * sl, int id,
         {
             cerr << "HElib Exception; terminating this thread." << endl;
             delete [] buffer;
-            close_client_thread(sl);
+            close_client_thread(sl, sl->server);
         }
 
 #ifdef MEMTEST
@@ -421,7 +430,7 @@ void calculate_distances(ServerData * sd, ClientLink * sl, int id,
     {
         cerr << "HElib Exception; terminating this thread." << endl;
         delete [] buffer;
-        close_client_thread(sl);
+        close_client_thread(sl, sl->server);
     }
     stream_to_socket(stream, buffer, sl, BUFFSIZE);
     stream.str("");
@@ -491,15 +500,15 @@ void generate_scheme(ServerData * sd, char * argv[]) {
 Ctxt generate_output(Ctxt input, vector<Ctxt> locs,
                      const FHEPubKey &pk)
 {
-    int i;
+    uint32_t i;
     Ctxt cx(pk);
     vector<long> pvec;
-    for (int i = 0; i < pk.getContext().ea->size(); i++)
+    for (i = 0; i < pk.getContext().ea->size(); i++)
     {
 		pvec.push_back(0);
 	}
 	pk.getContext().ea->encrypt(cx, pk, pvec);
-    for (i=0; i < locs.size(); i++)
+    for (i = 0; i < locs.size(); i++)
     {
         Ctxt zx(locs[i]); /**Copy coordinate set i to a temporary Ctxt**/
         zx = compute(zx, input, pk); /**Calculate distance**/
@@ -521,6 +530,7 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
     from the ciphertext after computation.
     purge = Enc[1 0 0 0 ...]
     **/
+    uint32_t i;
     vector<long> pvec;
     Ctxt purge(pk);
     pvec.push_back(1);
@@ -532,7 +542,7 @@ Ctxt compute(Ctxt c1, Ctxt c2, const FHEPubKey &pk)
     double msecs_x, msecs_y;
 #endif
 
-    for (int i = 1; i < pk.getContext().ea->size(); i++)
+    for (i = 1; i < pk.getContext().ea->size(); i++)
     {
 		pvec.push_back(0);
 	}
@@ -788,8 +798,7 @@ void stream_to_socket(istream &stream, char ** buffer,
         if (!recv_ack(sl))
         {
             cerr << "ACK error: socket data block; terminating this thread." << endl;
-//            pthread_join(sl->id, NULL);
-            close_client_thread(sl);
+            close_client_thread(sl, sl->server);
         }
     }
     while (k == blocksize);
@@ -838,12 +847,18 @@ void socket_to_stream(ostream &stream, char ** buffer,
 #endif // TRANSFER
 }
 
-void close_client_thread(ClientLink * sl) {
-    sl->server->cluster.erase(sl->server->cluster.begin()+(sl->thisClient));
-    sl->server->threadID.erase(sl->server->threadID.begin()+(sl->thisClient));
-    sl->server->clients[sl->thisClient]=0;
-    sl->server->users--;
-    pthread_join(sl->id, NULL);
+void close_client_thread(ClientLink * sl, ServerData * server) {
+    close(sl->sockFD);
+    server->cluster[sl->thisClient].thisLoc.erase(server->cluster[sl->thisClient].thisLoc.begin(),
+                                                      server->cluster[sl->thisClient].thisLoc.end());
+    server->cluster[sl->thisClient].theirLocs.erase(server->cluster[sl->thisClient].theirLocs.begin(),
+                                                      server->cluster[sl->thisClient].theirLocs.end());
+    delete server->cluster[sl->thisClient].thisKey;
+    server->cluster.erase(server->cluster.begin()+sl->thisClient);
+    cout << "Client " << sl->thisClient << " disconnecting." << endl;
+    server->clients[sl->thisClient]=0;
+    server->users--;
+    pthread_join(server->threadID[sl->thisClient], NULL);
 }
 
 int free_slot(vector<int> input) {
